@@ -1,8 +1,6 @@
 
-from email import header
 import weaviate
 from weaviate.util import generate_uuid5
-import requests
 
 from classification import classify_repository
 

@@ -2,7 +2,9 @@
 # DESIGN FOR CRAWLING THROUGH GITHUB REPOS
 import requests
 from dataclasses import dataclass, field
-
+import os
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 # LISTA DE URLS 
 
 # Haces una maner de ciclar entre varios repositorios a partir del más trending y cada vez que recorras el ciclo,
@@ -132,10 +134,40 @@ class Crawler:
     def fetch_repos(self) -> None:
         trending_repos = requests.get('https://gh-trending-api.herokuapp.com/repositories', headers={"accept": "application/json"}).json()
         
+
+
         for repo in trending_repos:
             repo_graph = TrendingReposGraph()
-            online_graph = self.build_online_graph_analysis(RepoNode(), [author['url'] for author in repo['builtBy']]) 
+            online_graph = self.build_online_graph_analysis(RepoNode(list(self.repo_initializer().values())), [author['url'] for author in repo['builtBy']]) 
             repo_graph.traverse_online_graph(online_graph)
+    
+    def repo_initializer(self, repo) -> dict:
+        gh_token = os.environ['GHTOKEN']
+
+        now = datetime.now()
+        sub_date = now - relativedelta(months=6)
+        updated_since = sub_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        repo_owner = repo["builtBy"][0]["username"]
+        languages = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/languages',
+            headers={"accept": "application/vnd.github.v3+json",
+                     "authorization": f"token {gh_token}"})
+        
+        open_issues = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/issues',
+            headers={"accept": "application/vnd.github.v3+json",
+                    "authorization": f"token {gh_token}"})
+        last_updated = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/commits?since={updated_since}',
+            headers={"accept": "application/vnd.github.v3+json",
+                    "authorization": f"token {gh_token}"})
+        return {
+            'url': repo['url'],
+            'name': repo['repositoryName'],
+            'header': repo['description'],
+            'languages': list(languages.keys()),
+            'stars': repo['totalStars'],
+            'openIssues': open_issues[0]['number'],
+            'lastUpdated': last_updated
+        }
     
     # for now it simply picks the most starred projects from the authors
     # if in a new round a repo has escalated in stars, the graph will place it before the previous ones
@@ -155,6 +187,8 @@ class Crawler:
         for repos in described_authors_repos[1:]:
             for repo in repos:
                 online_graph.append_node(repo, based_on_stars=True)
+        
+        return online_graph
 
             
             
