@@ -1,5 +1,6 @@
 
 # DESIGN FOR CRAWLING THROUGH GITHUB REPOS
+from hashlib import md5
 import requests
 from dataclasses import dataclass, field
 import os
@@ -20,7 +21,7 @@ from dateutil.relativedelta import relativedelta
 
 # Para la siguiente versión habrá que considerar una estructura que, dentro del grafo de repos similares a uno, permita establecer para
 # cada repo en ese grafo, cuales son los más similares a él -> lo utilizas en analyze priority
-
+TRENDING_REPOS_BASE_URL = 'https://gh-trending-api.herokuapp.com/repositories'
 @dataclass
 class RepoNode:
 
@@ -39,7 +40,11 @@ class RepoNode:
 @dataclass
 class RepoGraph:
 
+    id: int = field(init=False)
     head: RepoNode = None
+    
+    def __post_init__(self) -> None:
+        self.id = md5().update(self.head.name)
 
     def append_node(self, node: RepoNode, based_on_stars=False) -> int:
         
@@ -99,7 +104,7 @@ class TrendingReposGraph(RepoGraph):
         super().__init__()
     
 
-    def traverse_online_graph(self, online_repo: RepoNode):
+    def traverse_online_graph(self, online_repo: RepoNode) -> list[RepoNode]:
         current_repo = self.head
         current_online_repo = online_repo
 
@@ -120,7 +125,7 @@ class TrendingReposGraph(RepoGraph):
 
     def analyze_priority(self, curr_repo, curr_onrepo):
         """ UPON BUILDING THE ONLINE REPOS GRAPH YOU'LL KNOW HOW TO ANALYZE PRIORITIES """
-
+        
     
 
 
@@ -128,18 +133,30 @@ class Crawler:
 
     def __init__(self, ) -> None:
         self.repos_to_crawl = []
+        self.trend_repos_graphs = []
+        self.trend_repos_graphs_ids = []
 
 
     # mirar también a los topics
     def fetch_repos(self) -> None:
-        trending_repos = requests.get('https://gh-trending-api.herokuapp.com/repositories', headers={"accept": "application/json"}).json()
+        trending_repos = requests.get(TRENDING_REPOS_BASE_URL, headers={"accept": "application/json"}).json()
         
 
 
         for repo in trending_repos:
-            repo_graph = TrendingReposGraph()
-            online_graph = self.build_online_graph_analysis(RepoNode(list(self.repo_initializer().values())), [author['url'] for author in repo['builtBy']]) 
-            repo_graph.traverse_online_graph(online_graph)
+            online_graph = self.build_online_graph_analysis(RepoNode(**self.repo_initializer(repo).values()), [author['url'] for author in repo['builtBy']]) 
+            if online_graph.id in self.trend_repos_graphs_ids:
+                repo_graph = self.trend_repos_graphs[online_graph.id]
+                self.repos_to_crawl += repo_graph.traverse_online_graph(online_graph)
+            else:
+                repo_graph = online_graph
+                self.trend_repos_graphs_ids.append(online_graph.id)
+                self.trend_repos_graphs[online_graph.id] = online_graph
+            
+            self.crawl(repo_graph)
+
+    def crawl(self, graph) -> None:
+        pass           
     
     def repo_initializer(self, repo) -> dict:
         gh_token = os.environ['GHTOKEN']
@@ -156,6 +173,7 @@ class Crawler:
         open_issues = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/issues',
             headers={"accept": "application/vnd.github.v3+json",
                     "authorization": f"token {gh_token}"})
+
         last_updated = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/commits?since={updated_since}',
             headers={"accept": "application/vnd.github.v3+json",
                     "authorization": f"token {gh_token}"})
@@ -166,19 +184,19 @@ class Crawler:
             'languages': list(languages.keys()),
             'stars': repo['totalStars'],
             'openIssues': open_issues[0]['number'],
-            'lastUpdated': last_updated
+            'lastUpdated': len(last_updated) > 0
         }
     
     # for now it simply picks the most starred projects from the authors
     # if in a new round a repo has escalated in stars, the graph will place it before the previous ones
     # for analyzing the priorities i'll grab the classification from them both and pick the one more similar to the starter repo
     # The classification results that most alike to the starter repo
-    def build_online_graph_analysis(self, starter_node: RepoNode, authors) -> RepoGraph:
+    def build_online_graph_analysis(self, starter_node: RepoNode, authors) -> TrendingReposGraph:
         """ FOLLOWS A STRATEGY FOR LOOPING OVER SOME REPOSITORIES ONLINE AND PICKS THEIR DATA """
 
         authors_repos: list[list[str]] = self.get_authors_repos(authors) # Repos will be returned in starring order
         described_authors_repos: list[list[RepoNode]] = self.describe_url(authors_repos)
-        online_graph = RepoGraph(starter_node)
+        online_graph = TrendingReposGraph(starter_node)
         
         for repo in described_authors_repos[0]:
             online_graph.append_node(repo)
@@ -190,6 +208,11 @@ class Crawler:
         
         return online_graph
 
+    def get_authors_repos(self, authors) -> list[list[str]]:
+        pass
+
+    def describe_url(self, repos) -> list[list[RepoNode]]:
+        pass
             
             
 
