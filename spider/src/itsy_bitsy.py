@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from collections import defaultdict
 # LISTA DE URLS 
 
 # Haces una maner de ciclar entre varios repositorios a partir del más trending y cada vez que recorras el ciclo,
@@ -22,9 +23,10 @@ from dateutil.relativedelta import relativedelta
 # Para la siguiente versión habrá que considerar una estructura que, dentro del grafo de repos similares a uno, permita establecer para
 # cada repo en ese grafo, cuales son los más similares a él -> lo utilizas en analyze priority
 TRENDING_REPOS_BASE_URL = 'https://gh-trending-api.herokuapp.com/repositories'
-@dataclass
-class RepoNode:
 
+
+@dataclass
+class RepoNodeInfo:
     url: str
     name: str = None
     header: str = None
@@ -33,8 +35,12 @@ class RepoNode:
     stars: int = 0
     openIssues: int = 0
     lastUpdated: int = 0
+
+@dataclass
+class RepoNode:
     nextRepo = None
     previousRepo = None
+    info: RepoNodeInfo = None
     
     
 @dataclass
@@ -44,7 +50,7 @@ class RepoGraph:
     head: RepoNode = None
     
     def __post_init__(self) -> None:
-        self.id = md5().update(self.head.name)
+        self.id = md5().update(self.head.info.name)
 
     def append_node(self, node: RepoNode, based_on_stars=False) -> int:
         
@@ -55,7 +61,7 @@ class RepoGraph:
         index = 1
         iter_node = self.head
         while iter_node.nextRepo != None:
-            if based_on_stars and iter_node.nextRepo.stars < node.stars:
+            if based_on_stars and iter_node.nextRepo.info.stars < node.info.stars:
                 node.nextRepo = iter_node.nextRepo
                 iter_node.nextRepo = node
                 return index
@@ -104,22 +110,25 @@ class TrendingReposGraph(RepoGraph):
         super().__init__()
     
 
-    def traverse_online_graph(self, online_repo: RepoNode) -> list[RepoNode]:
+    def traverse_online_graph(self, online_repo: RepoNode) -> list[RepoNodeInfo]:
         current_repo = self.head
         current_online_repo = online_repo
+        final_graph_list = []
 
-        if current_online_repo == None:
+        if current_repo == None:
             self.head = online_repo
-            return
         
         while current_repo.nextRepo != None or current_online_repo.nextRepo != None:
 
-            if (current_online_repo.url != current_repo.url):
+            if (current_online_repo.info.url != current_repo.info.url):
                 self.analyze_priority(current_repo, current_online_repo)
             
+            final_graph_list.append(current_repo.info)
             current_repo = current_repo.nextRepo
             current_online_repo = current_online_repo.nextRepo
-            
+
+
+        return final_graph_list
         
         
 
@@ -134,7 +143,7 @@ class Crawler:
     def __init__(self, ) -> None:
         self.repos_to_crawl = []
         self.trend_repos_graphs = []
-        self.trend_repos_graphs_ids = []
+        self.trend_repos_graphs_ids = [] # only head nodes ids
 
 
     # mirar también a los topics
@@ -144,16 +153,17 @@ class Crawler:
 
 
         for repo in trending_repos:
-            online_graph = self.build_online_graph_analysis(RepoNode(**self.repo_initializer(repo).values()), [author['url'] for author in repo['builtBy']]) 
+            online_graph = self.build_online_graph_analysis(RepoNode(RepoNodeInfo(**self.repo_initializer(repo).values())), [author['url'] for author in repo['builtBy']]) 
+            repo_graph = RepoGraph()
             if online_graph.id in self.trend_repos_graphs_ids:
                 repo_graph = self.trend_repos_graphs[online_graph.id]
-                self.repos_to_crawl += repo_graph.traverse_online_graph(online_graph)
             else:
-                repo_graph = online_graph
                 self.trend_repos_graphs_ids.append(online_graph.id)
                 self.trend_repos_graphs[online_graph.id] = online_graph
-            
-            self.crawl(repo_graph)
+
+            self.repos_to_crawl += repo_graph.traverse_online_graph(online_graph.head)
+
+        self.crawl(repo_graph)
 
     def crawl(self, graph) -> None:
         pass           
