@@ -2,11 +2,13 @@
 import weaviate
 from weaviate.util import generate_uuid5
 import os
-
+import asyncio
+from dotenv import load_dotenv
+load_dotenv()
 from classification import classify_repository
 
 client = weaviate.client.Client('http://192.168.0.23:8080')
-GH_TOKEN = os.environ['GHTOKEN']
+GHTOKEN = os.environ['GHTOKEN']
 
 
 repo_schema = {
@@ -19,7 +21,7 @@ repo_schema = {
     "lastUpdated"
 }
 
-def main():
+async def main():
     # Buscas los siguientes x repos
     # Extraes las features
     # query_header = 
@@ -30,6 +32,7 @@ def main():
     # last_updated = 
 
     # Añades las features
+    # parte de weaviate
     current_languages = query_languages(client)
     header_upload = {
         "list": query_header
@@ -61,4 +64,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
