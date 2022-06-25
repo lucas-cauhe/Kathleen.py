@@ -1,11 +1,17 @@
+anyio==3.6.1
 certifi==2022.5.18.1
 charset-normalizer==2.0.12
 decorator==5.1.1
+h11==0.12.0
+httpcore==0.15.0
+httpx==0.23.0
 idna==3.3
 python-dateutil==2.8.2
 pytz==2022.1
 requests==2.27.1
+rfc3986==1.5.0
 six==1.16.0
+sniffio==1.2.0
 tqdm==4.64.0
 urllib3==1.26.9
 validators==0.18.2

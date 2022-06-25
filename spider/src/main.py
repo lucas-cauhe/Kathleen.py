@@ -1,10 +1,13 @@
 
 import weaviate
 from weaviate.util import generate_uuid5
+import os
 
 from classification import classify_repository
 
 client = weaviate.client.Client('http://192.168.0.23:8080')
+GH_TOKEN = os.environ['GHTOKEN']
+
 
 repo_schema = {
     "languages",

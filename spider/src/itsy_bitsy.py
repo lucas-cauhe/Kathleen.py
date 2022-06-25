@@ -1,12 +1,15 @@
 
 # DESIGN FOR CRAWLING THROUGH GITHUB REPOS
 from hashlib import md5
+import itertools
+from typing import Generator
 import requests
 from dataclasses import dataclass, field
-import os
+from main import GH_TOKEN
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from collections import defaultdict
+import asyncio
+import httpx
 # LISTA DE URLS 
 
 # Haces una maner de ciclar entre varios repositorios a partir del más trending y cada vez que recorras el ciclo,
@@ -23,7 +26,6 @@ from collections import defaultdict
 # Para la siguiente versión habrá que considerar una estructura que, dentro del grafo de repos similares a uno, permita establecer para
 # cada repo en ese grafo, cuales son los más similares a él -> lo utilizas en analyze priority
 TRENDING_REPOS_BASE_URL = 'https://gh-trending-api.herokuapp.com/repositories'
-
 
 @dataclass
 class RepoNodeInfo:
@@ -147,13 +149,13 @@ class Crawler:
 
 
     # mirar también a los topics
-    def fetch_repos(self) -> None:
+    async def fetch_repos(self) -> None:
         trending_repos = requests.get(TRENDING_REPOS_BASE_URL, headers={"accept": "application/json"}).json()
         
 
 
         for repo in trending_repos:
-            online_graph = self.build_online_graph_analysis(RepoNode(RepoNodeInfo(**self.repo_initializer(repo).values())), [author['url'] for author in repo['builtBy']]) 
+            online_graph = self.build_online_graph_analysis(RepoNode(RepoNodeInfo(**await self.repo_initializer(repo).values())), [author['url'] for author in repo['builtBy']]) 
             repo_graph = RepoGraph()
             if online_graph.id in self.trend_repos_graphs_ids:
                 repo_graph = self.trend_repos_graphs[online_graph.id]
@@ -168,31 +170,35 @@ class Crawler:
     def crawl(self, graph) -> None:
         pass           
     
-    def repo_initializer(self, repo) -> dict:
-        gh_token = os.environ['GHTOKEN']
+    async def repo_initializer(self, repo) -> dict:
+        
 
         now = datetime.now()
         sub_date = now - relativedelta(months=6)
         updated_since = sub_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        repo_owner = repo["builtBy"][0]["username"]
-        languages = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/languages',
-            headers={"accept": "application/vnd.github.v3+json",
-                     "authorization": f"token {gh_token}"})
-        
-        open_issues = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/issues',
-            headers={"accept": "application/vnd.github.v3+json",
-                    "authorization": f"token {gh_token}"})
+        repo_owner = repo.get('builtBy', None)[0].get('username', None) or repo['owner']['login']
+        query_headers = {"accept": "application/vnd.github.v3+json",
+                    "authorization": f"token {GH_TOKEN}"}
 
-        last_updated = requests.get(f'https://api.github.com/repos/{repo_owner}/{repo["repositoryName"]}/commits?since={updated_since}',
-            headers={"accept": "application/vnd.github.v3+json",
-                    "authorization": f"token {gh_token}"})
+        base_string = f'https://api.github.com/repos/{repo_owner}/{repo.get("repositoryName", "name")}'
+        repo_params = ['languages', 'issues', f'commits?since={updated_since}']
+
+        async with httpx.AsyncClient() as client:
+            languages, open_issues, last_updated = await asyncio.gather(
+                *map(lambda param: await client.get(base_string+param, headers=query_headers).json()
+                , repo_params, 
+                itertools.repeat(client),)
+            ) 
+        
+        fetch_stars = lambda *x: len(await requests.get(base_string+'/stargazers').json()[0])
+
         return {
             'url': repo['url'],
-            'name': repo['repositoryName'],
+            'name': repo.get('repositoryName', 'name'),
             'header': repo['description'],
             'languages': list(languages.keys()),
-            'stars': repo['totalStars'],
+            'stars': repo.get('totalStars', fetch_stars()),
             'openIssues': open_issues[0]['number'],
             'lastUpdated': len(last_updated) > 0
         }
@@ -204,32 +210,38 @@ class Crawler:
     def build_online_graph_analysis(self, starter_node: RepoNode, authors) -> TrendingReposGraph:
         """ FOLLOWS A STRATEGY FOR LOOPING OVER SOME REPOSITORIES ONLINE AND PICKS THEIR DATA """
 
-        authors_repos: list[list[str]] = self.get_authors_repos(authors) # Repos will be returned in starring order
-        described_authors_repos: list[list[RepoNode]] = self.describe_url(authors_repos)
+        #authors_repos: list[list[str]] = self.get_authors_repos(authors) # Repos will be returned in starring order
+        #described_authors_repos: list[list[RepoNode]] = self.describe_url(authors_repos)
+
+        parsed_authors_repos = self.parse_repos(authors)
         online_graph = TrendingReposGraph(starter_node)
-        
-        for repo in described_authors_repos[0]:
-            online_graph.append_node(repo)
 
         
-        for repos in described_authors_repos[1:]:
-            for repo in repos:
-                online_graph.append_node(repo, based_on_stars=True)
+        for repo in parsed_authors_repos:
+            online_graph.append_node(repo, based_on_stars=True)
         
         return online_graph
 
-    def get_authors_repos(self, authors) -> list[list[str]]:
-        pass
-
-    def describe_url(self, repos) -> list[list[RepoNode]]:
-        pass
+    async def get_authors_repos(self, authors) -> Generator[dict]:
+        """ QUERY EACH <<authors>> REPOS AND MAKE THEM INTO A LIST, RETURN THE LIST OF PREVIOUS LISTS """
+        # Since each repo description might contain a ton of unwanted info, this is a generator
+        
+        request = lambda url: requests.get(f'{url}/repos', headers={"authorization": f"token {GH_TOKEN}"}).json()
+        res =  await asyncio.gather(*[request(url) for url in authors])
+        for repos in res:
+            yield repos
             
-            
 
-
-
+    async def parse_repos(self, authors) -> list[RepoNode]:
+        """ PARSE EACH AUTHOR'S REPOSITORIES INTO A LIST """
+        
+        authors_repos = await self.get_authors_repos(authors)
+        nodes_list = []
+        for repo in authors_repos:
+            repo_info = RepoNodeInfo(**await self.repo_initializer(repo))
+            nodes_list.append(RepoNode(repo_info))
+        return nodes_list
     
-
 
 
 
