@@ -2,7 +2,7 @@
 # DESIGN FOR CRAWLING THROUGH GITHUB REPOS
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Dict, Union
+from typing import AsyncGenerator, Dict, Optional, Union
 from main import GHTOKEN
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -43,15 +43,15 @@ class RepoNodeInfo:
 @dataclass
 class RepoNode:
     info: RepoNodeInfo 
-    nextRepo: Union[RepoNode, None] = None
-    previousRepo: Union[RepoNode, None] = None
+    nextRepo: Optional[RepoNode] = None
+    previousRepo: Optional[RepoNode] = None
     
     
 @dataclass
 class RepoGraph:
 
-    id: Union[int, None] = field(init=False)
-    head: Union[RepoNode, None] = None
+    id: Optional[int] = field(init=False)
+    head: Optional[RepoNode] = None
     
     def __post_init__(self) -> None:
         self.id = hash(self.head.info.name) if self.head else None
@@ -149,7 +149,7 @@ class TrendingReposGraph(RepoGraph):
 
 class Crawler:
 
-    def __init__(self, ) -> None:
+    def __init__(self) -> None:
         self.repos_to_crawl: list[RepoNodeInfo] = []
         self.trend_repos_graphs: list[RepoGraph] = []
         self.trend_repos_graphs_ids: list[int] = [] # only head nodes ids
@@ -173,7 +173,7 @@ class Crawler:
 
             self.repos_to_crawl += repo_graph.traverse_online_graph(online_graph.head)  # type: ignore
 
-        self.crawl(repo_graph) # type: ignore
+        
 
     def crawl(self, graph: RepoGraph) -> None:
         print("Crawling throughout GITHUB...")           
@@ -185,28 +185,30 @@ class Crawler:
         sub_date = now - relativedelta(months=6)
         updated_since = sub_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        repo_owner = repo.get('builtBy', [''])[0].get('username', None) or repo['owner']['login'] # type: ignore
+        repo_owner = repo.get('builtBy', [{'a':'b'}])[0].get('username', None) or repo['owner']['login'] # type: ignore
         query_headers = {"accept": "application/vnd.github.v3+json",
                     "authorization": f"token {GHTOKEN}"}
 
-        base_string = f'https://api.github.com/repos/{repo_owner}/{repo.get("repositoryName", "name")}'
+        base_string = f'https://api.github.com/repos/{repo_owner}/{repo.get("repositoryName", repo["name"])}/'
         repo_params = ['languages', 'issues', f'commits?since={updated_since}']
         
         client = httpx.AsyncClient()
+        
         languages, open_issues, last_updated = await asyncio.gather( # type: ignore
-            *map(lambda param: client.get(base_string+param, headers=query_headers).json()  # type: ignore
-            , repo_params, 
+            *map(lambda param, client: (await client.get(base_string+param, headers=query_headers) for _ in '_').__anext__(),  # type: ignore
+            repo_params, 
             itertools.repeat(client),)
         ) 
         
-        fetch_stars = lambda : len(requests.get(base_string+'/stargazers').json()[0])
+        fetch_stars = lambda : len(requests.get(base_string+'stargazers').json())
+        
         info: Dict[str, Union[str, list[str], int]] = {'url': repo['url'], # type: ignore
-            'name': repo.get('repositoryName', 'name'),
+            'name': repo.get('repositoryName', repo["name"]),
             'header': repo['description'],
-            'languages': list(languages.keys()), # type:ignore
+            'languages': list(languages.json().keys()), # type:ignore
             'stars': repo.get('totalStars', fetch_stars()),
-            'openIssues': open_issues[0]['number'],
-            'lastUpdated': len(last_updated) > 0 # type: ignore
+            'openIssues': len(open_issues.json()),
+            'lastUpdated': len(last_updated.json()) > 0 # type: ignore
         }
         return RepoNodeInfo(**info) # type: ignore
         

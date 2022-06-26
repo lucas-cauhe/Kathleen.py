@@ -1,9 +1,13 @@
 
 import unittest
+from unittest import IsolatedAsyncioTestCase
 import sys
 sys.path.append('/Users/cinderella/Documents/Kathleen-back-weaviate/github-upload/spider/src')  # type: ignore
-from spider import RepoGraph, RepoNode, RepoNodeInfo 
-
+from spider import Crawler, RepoGraph, RepoNode, RepoNodeInfo 
+import requests
+from main import GHTOKEN
+import asyncio
+import logging
 class TestCrawler(unittest.TestCase):
 
     def test_repo_graph(self):
@@ -41,8 +45,36 @@ class TestCrawler(unittest.TestCase):
         test_graph.update_node_at(3, 1)
         self.assertEqual(1, test_graph.find_node(nodes[2]))
 
-    def test_crawler(self):
-        pass
+class AsyncTests(IsolatedAsyncioTestCase):
+    
+    
+    async def test_crawler(self):
+        logging.disable(logging.CRITICAL)
+        crawler = Crawler()
+
+        repo1 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen.py', headers={"Authorization": f"token {GHTOKEN}"}).json()
+        repo2 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen', headers={"Authorization": f"token {GHTOKEN}"}).json()
+        
+        repo1_init = await crawler.repo_initializer(repo1)
+        repo2_init = await crawler.repo_initializer(repo2)
+
+        self.assertEqual('Kathleen.py', repo1_init.name)
+        self.assertEqual('Kathleen', repo2_init.name)
+
+        self.assertEqual("Kathleen implemented with python via weaviate", repo1_init.header)
+        self.assertEqual("Search Engine for github repos", repo2_init.header)
+
+        self.assertListEqual(['Python'], repo1_init.languages, msg="Languages incorrect for repo1")
+        self.assertListEqual(['Rust', 'PLpgSQL'], repo2_init.languages, msg="Languages incorrect for repo2")
+
+        self.assertEqual(0, repo1_init.stars)
+        self.assertNotEqual(0, repo2_init.stars)
+
+        self.assertEqual(0, repo1_init.openIssues)
+        
+        self.assertTrue(repo1_init.lastUpdated)
+
+
 
 if __name__ == '__main__':
     unittest.main()
