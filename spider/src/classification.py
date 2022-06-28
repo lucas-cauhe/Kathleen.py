@@ -43,3 +43,5 @@ def classify_repository(client: Client):
     print('popularity_classification_results: ', popularity_classification_results)
     
     
+def build_reduced_db_instance():
+    pass

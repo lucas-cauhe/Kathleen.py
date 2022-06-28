@@ -1,13 +1,16 @@
 
+from email import header
+from pprint import PrettyPrinter
 import unittest
 from unittest import IsolatedAsyncioTestCase
 import sys
 sys.path.append('/Users/cinderella/Documents/Kathleen-back-weaviate/github-upload/spider/src')  # type: ignore
-from spider import Crawler, RepoGraph, RepoNode, RepoNodeInfo 
+from spider import Crawler, RepoGraph, RepoNode, RepoNodeInfo, GHTOKEN
 import requests
-from main import GHTOKEN
-import asyncio
 import logging
+import tracemalloc
+
+tracemalloc.start()
 class TestCrawler(unittest.TestCase):
 
     def test_repo_graph(self):
@@ -48,9 +51,21 @@ class TestCrawler(unittest.TestCase):
 class AsyncTests(IsolatedAsyncioTestCase):
     
     
+    
     async def test_crawler(self):
+        logging.disable(logging.WARN)
         logging.disable(logging.CRITICAL)
-        crawler = Crawler()
+        logging.disable(logging.DEBUG)
+        crawl_inputs = {
+            'q': {
+                'language': 'language:Python,HTML',
+                'stars': 'stars:10..100'
+            },
+            'order': 'desc'
+        }
+        crawler = Crawler(crawl_inputs) # type: ignore
+
+        """ REPO_INITIALIZER """
 
         repo1 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen.py', headers={"Authorization": f"token {GHTOKEN}"}).json()
         repo2 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen', headers={"Authorization": f"token {GHTOKEN}"}).json()
@@ -74,6 +89,26 @@ class AsyncTests(IsolatedAsyncioTestCase):
         
         self.assertTrue(repo1_init.lastUpdated)
 
+        """ FETCH_REPOS """
+
+        crawl_inputs = {**crawl_inputs, 'match': 'amigo', 'q': {**crawl_inputs['q'], 'in': 'in:readme'}}  
+        crawler = Crawler(crawl_inputs)
+        crawler_fetch_results = crawler.fetch_repos()
+        print("CRAWLER FETCHED REPOS: ") 
+        PrettyPrinter(sort_dicts=False).pprint(crawler_fetch_results)
+
+        # works
+
+        """ REPO_GEN """
+
+
+        async for gen in crawler.repo_gen():
+            print("LENGTH FOR GEN: ", len(gen))
+
+        
+        self.assertEqual(len(crawler.repos_to_crawl), 50)
+        # works even if it throws several warnings
+        
 
 
 if __name__ == '__main__':

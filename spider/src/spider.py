@@ -1,15 +1,19 @@
 
 # DESIGN FOR CRAWLING THROUGH GITHUB REPOS
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Dict, Optional, Union
-from main import GHTOKEN
+from dotenv import load_dotenv
+load_dotenv()
+import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import itertools
 import asyncio
 import httpx
 import requests
+from classification import classify_repository
 # LISTA DE URLS 
 
 # Haces una maner de ciclar entre varios repositorios a partir del más trending y cada vez que recorras el ciclo,
@@ -26,7 +30,12 @@ import requests
 # Para la siguiente versión habrá que considerar una estructura que, dentro del grafo de repos similares a uno, permita establecer para
 # cada repo en ese grafo, cuales son los más similares a él -> lo utilizas en analyze priority
 TRENDING_REPOS_BASE_URL = 'https://gh-trending-api.herokuapp.com/repositories'
-
+GH_BASE_SEARCH_URL='https://api.github.com/search/repositories'
+CRAWL_LIMIT = 50
+GHTOKEN = os.environ['GHTOKEN']
+GH_QUERY_HEADERS={"accept": "application/vnd.github.v3+json",
+                "authorization": f"token {GHTOKEN}"}
+        
 @dataclass
 class RepoNodeInfo:
     url: str
@@ -112,7 +121,7 @@ class RepoGraph:
 
 
 
-class TrendingReposGraph(RepoGraph):
+class StructuredReposGraph(RepoGraph):
 
     def __init__(self, head: Union[RepoNode, None] = None) -> None:
         super().__init__(head)
@@ -143,40 +152,66 @@ class TrendingReposGraph(RepoGraph):
 
     def analyze_priority(self, curr_repo: RepoNode, curr_onrepo: RepoNode) -> None:
         """ UPON BUILDING THE ONLINE REPOS GRAPH YOU'LL KNOW HOW TO ANALYZE PRIORITIES """
-        
-    
+        # Here you have to load the representative DB from weaviate and classify the <<curr_onrepo>> 
+        # and compare it against the curr_repo (taking its classification from the true DB)
+        # Those repos that result far from what's expected (crawler_inputs) will be left out from the repos to crawl
+
+        # Return the update Data Structure upon having analyzed both repos 
 
 
 class Crawler:
 
-    def __init__(self) -> None:
+    def __init__(self, crawl_inputs: Dict[str, str], reduced_db_instance=None) -> None:
         self.repos_to_crawl: list[RepoNodeInfo] = []
-        self.trend_repos_graphs: list[RepoGraph] = []
-        self.trend_repos_graphs_ids: list[int] = [] # only head nodes ids
+        self.structured_repos_graphs: list[RepoGraph] = []
+        self.structured_repos_graphs_ids: list[int] = [] # only head nodes ids
+        self.crawl_inputs = crawl_inputs
+        self.reduced_db_instance = reduced_db_instance # type: ignore (it's a weaviate instance)
 
 
     # mirar también a los topics
-    async def fetch_repos(self) -> None:
-        trending_repos = requests.get(TRENDING_REPOS_BASE_URL, headers={"accept": "application/json"}).json()
-        
-
-
-        for repo in trending_repos:
-            online_graph = await self.build_online_graph_analysis(RepoNode(await self.repo_initializer(repo)), 
-                [author['url'] for author in repo['builtBy']])
-            repo_graph = TrendingReposGraph()
-            if online_graph.id in self.trend_repos_graphs_ids:
-                repo_graph = self.trend_repos_graphs[online_graph.id]
-            else:
-                self.trend_repos_graphs_ids.append(online_graph.id) # type: ignore
-                self.trend_repos_graphs[online_graph.id] = online_graph # type: ignore
-
-            self.repos_to_crawl += repo_graph.traverse_online_graph(online_graph.head)  # type: ignore
+    async def repo_gen(self) -> AsyncGenerator[list[Dict[str, Union[str, Dict[str, str]]]], None]:
+        # The repos you now have to fetch is by searching along with crawl_inputs
+        while len(self.repos_to_crawl) < CRAWL_LIMIT:
+            new_repos = self.fetch_repos()
+            self.repos_to_crawl.extend([await self.repo_initializer(repo) for repo in new_repos])
+            yield new_repos
 
         
 
-    def crawl(self, graph: RepoGraph) -> None:
-        print("Crawling throughout GITHUB...")           
+    def fetch_repos(self) -> list[Dict[str, Union[str, Dict[str, str]]]]:
+        match=self.crawl_inputs.get('match', '')
+        within, stars, languages = self.crawl_inputs['q'].get('in', ''), self.crawl_inputs['q'].get('stars', ''), self.crawl_inputs['q'].get('language', '') # type: ignore
+        query_params = f'{"+"+within if within else ""}{"+"+stars if stars else ""}{"+"+languages if languages else ""}' # type: ignore
+        sort: str = self.crawl_inputs.get('sort', None) # type: ignore
+        order: str = self.crawl_inputs.get('order', None) #type: ignore
+        attach = f'?q={match}{query_params}{"&sort="+sort if sort else ""}{"&order="+order if order else ""}&per_page=10'
+
+        
+        res = requests.get(GH_BASE_SEARCH_URL+attach, headers=GH_QUERY_HEADERS).json()
+        
+        return res['items']
+
+    async def crawl(self) -> list[Dict[str, int]]:
+        """ TAKES THE REPOS FROM <<repos_to_crawl>> AND ADDS THEM TO THE DB AND CLASSIFIES THEM """  
+       
+        classified_repos: list[Dict[str, int]] = [] # {"index", "classification_result"}, index in <<repos_to_crawl>>
+        async for generator in self.repo_gen():
+            # Add repos to reduced db
+
+            pass
+
+            # Classify them
+            # Take classification results into classified_repos
+            
+            
+
+        sorted_repos = self.sort_classified_repos(classified_repos)    
+        self.repos_to_crawl = []
+        return sorted_repos
+
+    def sort_classified_repos(self, repos: list[Dict[str, int]]) -> list[Dict[str, int]]:
+        return [{"d": 0}]
     
     async def repo_initializer(self, repo: Dict[str, Union[str, Dict[str, str]]]) -> RepoNodeInfo:
         
@@ -186,71 +221,30 @@ class Crawler:
         updated_since = sub_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         repo_owner = repo.get('builtBy', [{'a':'b'}])[0].get('username', None) or repo['owner']['login'] # type: ignore
-        query_headers = {"accept": "application/vnd.github.v3+json",
-                    "authorization": f"token {GHTOKEN}"}
+        
 
         base_string = f'https://api.github.com/repos/{repo_owner}/{repo.get("repositoryName", repo["name"])}/'
-        repo_params = ['languages', 'issues', f'commits?since={updated_since}']
+        repo_params = ['languages', 'issues', f'commits?since={updated_since}', 'stargazers']
         
         client = httpx.AsyncClient()
         
-        languages, open_issues, last_updated = await asyncio.gather( # type: ignore
-            *map(lambda param, client: (await client.get(base_string+param, headers=query_headers) for _ in '_').__anext__(),  # type: ignore
+        languages, open_issues, last_updated, stars = await asyncio.gather( # type: ignore
+            *map(lambda param, client: (await client.get(base_string+param, headers=GH_QUERY_HEADERS) for _ in '_').__anext__(),  # type: ignore
             repo_params, 
             itertools.repeat(client),)
         ) 
         
-        fetch_stars = lambda : len(requests.get(base_string+'stargazers').json())
+        
         
         info: Dict[str, Union[str, list[str], int]] = {'url': repo['url'], # type: ignore
-            'name': repo.get('repositoryName', repo["name"]),
+            'name': repo.get("name", "Not found"),
             'header': repo['description'],
             'languages': list(languages.json().keys()), # type:ignore
-            'stars': repo.get('totalStars', fetch_stars()),
-            'openIssues': len(open_issues.json()),
+            'stars': len(stars.json()),                 # type: ignore
+            'openIssues': len(open_issues.json()),      # type: ignore
             'lastUpdated': len(last_updated.json()) > 0 # type: ignore
         }
         return RepoNodeInfo(**info) # type: ignore
-        
-    
-    # for now it simply picks the most starred projects from the authors
-    # if in a new round a repo has escalated in stars, the graph will place it before the previous ones
-    # for analyzing the priorities i'll grab the classification from them both and pick the one more similar to the starter repo
-    # The classification results that most alike to the starter repo
-    async def build_online_graph_analysis(self, starter_node: RepoNode, authors: list[str]) -> TrendingReposGraph:
-        """ FOLLOWS A STRATEGY FOR LOOPING OVER SOME REPOSITORIES ONLINE AND PICKS THEIR DATA """
-
-        #authors_repos: list[list[str]] = self.get_authors_repos(authors) # Repos will be returned in starring order
-        #described_authors_repos: list[list[RepoNode]] = self.describe_url(authors_repos)
-
-        parsed_authors_repos = await self.parse_repos(authors)
-        online_graph = TrendingReposGraph(starter_node)
-
-        
-        for repo in parsed_authors_repos:
-            online_graph.append_node(repo, based_on_stars=True)
-        
-        return online_graph
-
-    async def get_authors_repos(self, authors: list[str]) -> AsyncGenerator[str, str]:
-        """ QUERY EACH <<authors>> REPOS AND MAKE THEM INTO A LIST, RETURN THE LIST OF PREVIOUS LISTS """
-        # Since each repo description might contain a ton of unwanted info, this is a generator
-        
-        request = lambda url: requests.get(f'{url}/repos', headers={"authorization": f"token {GHTOKEN}"}).json() # type: ignore
-        res =  await asyncio.gather(*[request(url) for url in authors])
-        for repo in res:
-            yield repo
-            
-
-    async def parse_repos(self, authors: list[str]) -> list[RepoNode]:
-        """ PARSE EACH AUTHOR'S REPOSITORIES INTO A LIST """
-        
-        authors_repos = self.get_authors_repos(authors)
-        nodes_list: list[RepoNode] = []
-        async for repo in authors_repos:
-            repo_info = await self.repo_initializer(repo) #type: ignore
-            nodes_list.append(RepoNode(repo_info))
-        return nodes_list
     
 
 

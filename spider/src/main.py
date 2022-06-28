@@ -1,14 +1,16 @@
 
 import weaviate
 from weaviate.util import generate_uuid5
-import os
 import asyncio
-from dotenv import load_dotenv
-load_dotenv()
-from classification import classify_repository
+
+
+from spider import Crawler
+
+from classification import classify_repository, build_reduced_db_instance
+import asyncio
 
 client = weaviate.client.Client('http://192.168.0.23:8080')
-GHTOKEN = os.environ['GHTOKEN']
+
 
 
 repo_schema = {
@@ -22,17 +24,22 @@ repo_schema = {
 }
 
 async def main():
-    # Buscas los siguientes x repos
-    # Extraes las features
-    # query_header = 
-    # query_name =
-    # query_keywords = 
-    # query_stars = 
-    # query_issues =
-    # last_updated = 
+    
+    reduced_db_instance = load_reduced_db()
+    
+    if reduced_db_instance is None:
+        reduced_db_instance = build_reduced_db_instance()
 
-    # Añades las features
-    # parte de weaviate
+    crawler = Crawler(crawl_inputs={})
+
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(crawler.crawl()) # Ref: https://peps.python.org/pep-0525/
+        #...
+    finally:
+        loop.close()
+
+
     current_languages = query_languages(client)
     header_upload = {
         "list": query_header
