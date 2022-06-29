@@ -14,6 +14,7 @@ import asyncio
 import httpx
 import requests
 from classification import classify_repository
+from utils.cluster import KMedoids
 # LISTA DE URLS 
 
 # Haces una maner de ciclar entre varios repositorios a partir del más trending y cada vez que recorras el ciclo,
@@ -37,7 +38,7 @@ GH_QUERY_HEADERS={"accept": "application/vnd.github.v3+json",
                 "authorization": f"token {GHTOKEN}"}
         
 @dataclass
-class RepoNodeInfo:
+class RepoInfo:
     url: str
     name: str
     header: str
@@ -49,124 +50,11 @@ class RepoNodeInfo:
 
    
 
-@dataclass
-class RepoNode:
-    info: RepoNodeInfo 
-    nextRepo: Optional[RepoNode] = None
-    previousRepo: Optional[RepoNode] = None
-    
-    
-@dataclass
-class RepoGraph:
-
-    id: Optional[int] = field(init=False)
-    head: Optional[RepoNode] = None
-    
-    def __post_init__(self) -> None:
-        self.id = hash(self.head.info.name) if self.head else None
-
-    def append_node(self, node: RepoNode, based_on_stars:bool=False) -> int:
-        
-        
-        if (not self.head):
-            self.head  = node
-            self.__post_init__()
-            return 0
-        index = 1
-        iter_node = self.head
-        while iter_node.nextRepo:
-            if based_on_stars and iter_node.nextRepo.info.stars < node.info.stars:
-                node.nextRepo = iter_node.nextRepo
-                iter_node.nextRepo = node
-                return index
-
-            iter_node = iter_node.nextRepo
-            index += 1
-        iter_node.nextRepo = node
-        return index
-
-        
-
-    def update_node_at(self, from_position:int, to_position:int):
-        
-        
-        iter_node = self.head
-        
-        while iter_node and from_position-1:
-            iter_node = iter_node.nextRepo
-            from_position -= 1
-
-        moved_node = iter_node.nextRepo # type: ignore
-        iter_node.nextRepo = moved_node.nextRepo # type: ignore
-
-        iter_node = self.head
-        while iter_node and to_position-1:
-            iter_node = iter_node.nextRepo
-            to_position -= 1
-        
-        moved_node.nextRepo = iter_node.nextRepo # type: ignore
-        iter_node.nextRepo = moved_node          # type: ignore
-
-        
-
-
-    def find_node(self, node: RepoNode) -> int:
-        index = 0
-        
-        iter_node = self.head
-        while iter_node and iter_node.info.url != node.info.url:
-            iter_node = iter_node.nextRepo
-            index += 1
-        return index
-
-
-
-class StructuredReposGraph(RepoGraph):
-
-    def __init__(self, head: Union[RepoNode, None] = None) -> None:
-        super().__init__(head)
-    
-
-    def traverse_online_graph(self, online_repo: RepoNode) -> list[RepoNodeInfo]:
-        
-        current_online_repo = online_repo
-        final_graph_list: list[RepoNodeInfo] = []
-
-        if not self.head:
-            self.head = online_repo
-            self.__post_init__()
-        current_repo = self.head
-        while current_repo and  current_online_repo and (current_repo.nextRepo or current_online_repo.nextRepo): 
-
-            if (current_online_repo.info.url != current_repo.info.url): 
-                self.analyze_priority(current_repo, current_online_repo) 
-            
-            final_graph_list.append(current_repo.info)
-            current_repo = current_repo.nextRepo
-            current_online_repo = current_online_repo.nextRepo
-
-
-        return final_graph_list
-        
-        
-
-    def analyze_priority(self, curr_repo: RepoNode, curr_onrepo: RepoNode) -> None:
-        """ UPON BUILDING THE ONLINE REPOS GRAPH YOU'LL KNOW HOW TO ANALYZE PRIORITIES """
-        # Here you have to load the representative DB from weaviate and classify the <<curr_onrepo>> 
-        # and compare it against the curr_repo (taking its classification from the true DB)
-        # Those repos that result far from what's expected (crawler_inputs) will be left out from the repos to crawl
-
-        # Return the update Data Structure upon having analyzed both repos 
-
-
 class Crawler:
 
-    def __init__(self, crawl_inputs: Dict[str, str], reduced_db_instance=None) -> None:
-        self.repos_to_crawl: list[RepoNodeInfo] = []
-        self.structured_repos_graphs: list[RepoGraph] = []
-        self.structured_repos_graphs_ids: list[int] = [] # only head nodes ids
+    def __init__(self, crawl_inputs: Dict[str, str]) -> None:
+        self.repos_to_crawl: list[RepoInfo] = []
         self.crawl_inputs = crawl_inputs
-        self.reduced_db_instance = reduced_db_instance # type: ignore (it's a weaviate instance)
 
 
     # mirar también a los topics
@@ -192,28 +80,74 @@ class Crawler:
         
         return res['items']
 
-    async def crawl(self) -> list[Dict[str, int]]:
+    async def crawl(self) -> None:
         """ TAKES THE REPOS FROM <<repos_to_crawl>> AND ADDS THEM TO THE DB AND CLASSIFIES THEM """  
        
         classified_repos: list[Dict[str, int]] = [] # {"index", "classification_result"}, index in <<repos_to_crawl>>
+        # start kmedoids
+        main_objects = client.data_object.get(with_vector=True)
+        vectors = np.array([repo['vector'] for repo in main_objects['objects']]) #type: ignore
+
+        # Compute clusters
+        # Clusters will be computed using K-Medoids
+        cluster = KMedoids(data=vectors)
+        cluster.cluster()
+        # decide what medoid we are looking for depending on crawl_inputs, if crawl_inputs are None, return whole medoids
         async for generator in self.repo_gen():
-            # Add repos to reduced db
+            
+            # Add repos to db (retrieving vectorized repo), retrieve nearest neighbors, if nearest neighbors are members of medoid
+            # desired (decided by crawl_inputs), repo stays.
+            # If no crawl_inputs are set, every repo close enough to a medoid will be added
 
-            pass
 
-            # Classify them
-            # Take classification results into classified_repos
+            # Add repos to db
+                # Add each new self-class-property in the repo to its own classes by batches and keep their beacons
+                # Create each new repo object (requesting its vector representation (check it is the same before and after adding the references)) 
+                # and add previous references all by batches
+                # If references change the vector representation of the repo, retrieve back the repos with their vector representation
+                
+                
+
+
+            # Retrieve nearest neighbors   
+                # get with near_vector, pick some
+                    """ near_vector = {
+                    'vector': vector
+                    }
+                    clause = {
+                        'token': "certainty"
+                    }
+                    settings = {
+                        'properties': repo_properties,
+                    }
+                    medoids_repo = self.main_client.query.get("Repo", repo_properties) \
+                        .with_near_vector(near_vector) \
+                        .with_additional((clause, settings)) \
+                        .do() """
+                
+
+
+            # Check response with medoid
+                
+                # look in kmedoids results for the neighbors that are present in the desired medoid(s) members
+                # don't delete those repos whose found neighbors are closest (certainty) to the desired medoid(s) from the database
+                # keep track of those to delete and delete them in batches
+        
+        # delete in batches unwanted repos
+        # run classification after having added the desired repos
+
+
             
             
+            
 
-        sorted_repos = self.sort_classified_repos(classified_repos)    
+          
         self.repos_to_crawl = []
-        return sorted_repos
 
     def sort_classified_repos(self, repos: list[Dict[str, int]]) -> list[Dict[str, int]]:
         return [{"d": 0}]
     
-    async def repo_initializer(self, repo: Dict[str, Union[str, Dict[str, str]]]) -> RepoNodeInfo:
+    async def repo_initializer(self, repo: Dict[str, Union[str, Dict[str, str]]]) -> RepoInfo:
         
 
         now = datetime.now()
@@ -244,7 +178,7 @@ class Crawler:
             'openIssues': len(open_issues.json()),      # type: ignore
             'lastUpdated': len(last_updated.json()) > 0 # type: ignore
         }
-        return RepoNodeInfo(**info) # type: ignore
+        return RepoInfo(**info) # type: ignore
     
 
 

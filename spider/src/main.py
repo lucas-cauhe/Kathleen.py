@@ -12,7 +12,6 @@ import asyncio
 client = weaviate.client.Client('http://192.168.0.23:8080')
 
 
-
 repo_schema = {
     "languages",
     "header",
@@ -25,10 +24,9 @@ repo_schema = {
 
 async def main():
     
-    reduced_db_instance = load_reduced_db()
     
-    if reduced_db_instance is None:
-        reduced_db_instance = build_reduced_db_instance()
+    
+    
 
     crawler = Crawler(crawl_inputs={})
 
