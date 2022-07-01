@@ -4,49 +4,18 @@ from pprint import PrettyPrinter
 import unittest
 from unittest import IsolatedAsyncioTestCase
 import sys
+
+import weaviate
 sys.path.append('/Users/cinderella/Documents/Kathleen-back-weaviate/github-upload/spider/src')  # type: ignore
-from spider import Crawler, RepoGraph, RepoNode, RepoNodeInfo, GHTOKEN
+from spider import Crawler
+from utils.constants import GHTOKEN
+from utils.Repo import Repo
 import requests
 import logging
 import tracemalloc
 
 tracemalloc.start()
-class TestCrawler(unittest.TestCase):
-
-    def test_repo_graph(self):
-        # Since trending repos api is broken right now, I had to do it like this
-        info_dict = {
-            'url': 'https://github.com/CatVodTVOfficial/TVBoxOSC', 
-            'name':'TVBoxOSC', 
-            'header':'', 
-            'languages':['Java', 'CSS'],
-            'lastUpdated':True, 
-            'openIssues':0, 
-            'stars':454
-        }
-        info = RepoNodeInfo(**info_dict) # type: ignore
-        node = RepoNode(info)
-        test_graph = RepoGraph(node)
-
-        node_info = {**info_dict, 'name': 'dolt', 'url': 'https://github.com/dolthub/dolt', 'languages': ['Go', 'Python']}
-        node2 = RepoNode(RepoNodeInfo(**node_info)) # type:ignore
-        node_info = {**info_dict, 'name': 'YOLOv6', 'url': 'https://github.com/meituan/YOLOv6', 'languages': ['Python', 'Shell']}
-        node3 = RepoNode(RepoNodeInfo(**node_info)) # type:ignore
-        node_info = {**info_dict, 'name': 'dospring-cloud-tencentlt', 'url': 'https://github.com/Tencent/spring-cloud-tencent', 'languages': ['Java']}
-        node4 = RepoNode(RepoNodeInfo(**node_info)) # type:ignore
-
-        nodes = [node2, node3, node4]
-        indices = []
-        for node in nodes:
-            res = test_graph.append_node(node)
-            indices.append(res) # type: ignore
-        
-        self.assertEqual(1, test_graph.find_node(nodes[0]))
-        self.assertEqual(2, test_graph.find_node(nodes[1]))
-        self.assertNotEqual(1, test_graph.find_node(nodes[2]))
-
-        test_graph.update_node_at(3, 1)
-        self.assertEqual(1, test_graph.find_node(nodes[2]))
+client = weaviate.client.Client("http://192.168.0.23:8080")
 
 class AsyncTests(IsolatedAsyncioTestCase):
     
@@ -56,59 +25,73 @@ class AsyncTests(IsolatedAsyncioTestCase):
         logging.disable(logging.WARN)
         logging.disable(logging.CRITICAL)
         logging.disable(logging.DEBUG)
+        print("Client is ready? ", client.is_ready())
+        
         crawl_inputs = {
             'q': {
                 'language': 'language:Python,HTML',
                 'stars': 'stars:10..100'
             },
-            'order': 'desc'
+            'order': 'desc',
+            'props': {
+                "languages": ['Python', 'Rust'],
+                "name": 'Kathleen',
+                "header": 'Search Engine'
+            }
         }
-        crawler = Crawler(crawl_inputs) # type: ignore
+        crawler = Crawler(crawl_inputs, client) # type: ignore
 
         """ REPO_INITIALIZER """
-
+        
         repo1 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen.py', headers={"Authorization": f"token {GHTOKEN}"}).json()
         repo2 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen', headers={"Authorization": f"token {GHTOKEN}"}).json()
         
-        repo1_init = await crawler.repo_initializer(repo1)
-        repo2_init = await crawler.repo_initializer(repo2)
+        repo1_init = await Repo(client, input_repo=repo1).build()
+        repo2_init = await Repo(client, input_repo=repo2).build()
 
-        self.assertEqual('Kathleen.py', repo1_init.name)
-        self.assertEqual('Kathleen', repo2_init.name)
+        self.assertEqual('Kathleen.py', repo1_init.repo.name)
+        self.assertEqual('Kathleen', repo2_init.repo.name)
 
-        self.assertEqual("Kathleen implemented with python via weaviate", repo1_init.header)
-        self.assertEqual("Search Engine for github repos", repo2_init.header)
+        self.assertEqual("Kathleen implemented with python via weaviate", repo1_init.repo.header)
+        self.assertEqual("Search Engine for github repos", repo2_init.repo.header)
 
-        self.assertListEqual(['Python'], repo1_init.languages, msg="Languages incorrect for repo1")
-        self.assertListEqual(['Rust', 'PLpgSQL'], repo2_init.languages, msg="Languages incorrect for repo2")
+        self.assertListEqual(['Python'], repo1_init.repo.languages, msg="Languages incorrect for repo1")
+        self.assertListEqual(['Rust', 'PLpgSQL'], repo2_init.repo.languages, msg="Languages incorrect for repo2")
 
-        self.assertEqual(0, repo1_init.stars)
-        self.assertNotEqual(0, repo2_init.stars)
+        self.assertEqual('0', repo1_init.repo.stars)
+        self.assertNotEqual('0', repo2_init.repo.stars)
 
-        self.assertEqual(0, repo1_init.openIssues)
+        self.assertEqual('0', repo1_init.repo.openIssues)
         
-        self.assertTrue(repo1_init.lastUpdated)
+        self.assertTrue(repo1_init.repo.isUpdated)
+
+        
 
         """ FETCH_REPOS """
 
+        
+        """ 
         crawl_inputs = {**crawl_inputs, 'match': 'amigo', 'q': {**crawl_inputs['q'], 'in': 'in:readme'}}  
-        crawler = Crawler(crawl_inputs)
+        crawler = Crawler(crawl_inputs, client)
         crawler_fetch_results = crawler.fetch_repos()
         print("CRAWLER FETCHED REPOS: ") 
         PrettyPrinter(sort_dicts=False).pprint(crawler_fetch_results)
-
+        """
         # works
 
         """ REPO_GEN """
 
-
+        """ 
         async for gen in crawler.repo_gen():
             print("LENGTH FOR GEN: ", len(gen))
 
         
         self.assertEqual(len(crawler.repos_to_crawl), 50)
         # works even if it throws several warnings
-        
+        """
+        """ CRAWL """
+
+        await crawler.crawl()
 
 
 if __name__ == '__main__':

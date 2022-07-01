@@ -1,25 +1,76 @@
-
+from __future__ import annotations
 from ctypes import Union
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, Optional
 from weaviate import Client
+from dateutil.relativedelta import relativedelta
+import asyncio
+import httpx
+import itertools
+from utils.constants import GH_QUERY_HEADERS
+
+@dataclass
+class RepoInfo:
+    url: str
+    name: str
+    header: str
+    languages: list[str]
+    stars: str
+    openIssues: str
+    isUpdated: bool
+    keywords: list[str] = field(default_factory=list)
+
+    def __iter__(self):
+        yield 'languages', self.languages
+        yield 'header', self.header
+        yield 'name', self.name
+        yield 'stars', self.stars
+        yield 'openIssues', self.openIssues
+        yield 'isUpdated', self.isUpdated
+        yield 'keywords', self.keywords
 
 @dataclass
 class Repo():
 
     w_client: Client
-    repo: dict[str, Union[str, dict[str, str]]] # type:ignore
-    properties: list[str] = field(init=False, default_factory=list)
+    input_repo: dict[str, Union[str, dict[str, str]]] # type:ignore
+    repo: Optional[RepoInfo] = None
+
     
+    async def build(self) -> Repo:
+        
 
-    def __post_init__(self):
+        now = datetime.now()
+        sub_date = now - relativedelta(months=6)
+        updated_since = sub_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        schema = self.w_client.schema.get()
-        repo_class = dict(filter(lambda c: c["class"] == "Repo", schema["classes"]))
+        repo_owner = self.input_repo['owner']['login'] # type: ignore
+        
 
-        self.properties = [prop["name"] for prop in repo_class["properties"]]
-    
-    def get_properties(self) -> list[str]:
-        return self.properties
+        base_string = f'https://api.github.com/repos/{repo_owner}/{self.input_repo["name"]}/'
+        repo_params = ['languages', 'issues', f'commits?since={updated_since}', 'stargazers']
+        
+        client = httpx.AsyncClient()
+        
+        languages, open_issues, last_updated, stars = await asyncio.gather( # type: ignore
+            *map(lambda param, client: (await client.get(base_string+param, headers=GH_QUERY_HEADERS) for _ in '_').__anext__(),  # type: ignore
+            repo_params, 
+            itertools.repeat(client),)
+        ) 
+        
+        
+        
+        info: Dict[str, Union[str, list[str], int]] = {'url': self.input_repo['url'], # type: ignore
+            'name': self.input_repo.get("name", "Not found"),
+            'header': self.input_repo['description'],
+            'languages': list(languages.json().keys()), # type:ignore
+            'stars': str(len(stars.json())),                 # type: ignore
+            'openIssues': str(len(open_issues.json())),      # type: ignore
+            'isUpdated': len(last_updated.json()) > 0 # type: ignore
+        }
+        self.repo = RepoInfo(**info) # type: ignore
+        return Repo(self.w_client, repo=self.repo, input_repo=self.input_repo)
 
 
 

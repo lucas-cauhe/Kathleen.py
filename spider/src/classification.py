@@ -28,7 +28,7 @@ def classify_repository(client: Client):
     intention_classification_results = client.classification.schedule().with_type('zeroshot')\
         .with_class_name('Repo')\
         .with_classify_properties(["hasIntention"])\
-        .with_based_on_properties(['keywords', 'header'])\
+        .with_based_on_properties(['header'])\
         .with_wait_for_completion()\
         .do()
     popularity_classification_results = client.classification.schedule().with_type('zeroshot')\
@@ -38,7 +38,7 @@ def classify_repository(client: Client):
         .with_wait_for_completion()\
         .do()
     # Check classification_results
-
+    
     print('intention_classification_results: ', intention_classification_results)
     print('popularity_classification_results: ', popularity_classification_results)
     

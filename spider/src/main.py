@@ -9,7 +9,7 @@ from spider import Crawler
 from classification import classify_repository, build_reduced_db_instance
 import asyncio
 
-client = weaviate.client.Client('http://192.168.0.23:8080')
+#client = weaviate.client.Client('http://192.168.0.23:8080')
 
 
 repo_schema = {
