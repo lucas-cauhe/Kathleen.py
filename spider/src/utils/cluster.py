@@ -22,7 +22,7 @@ class KMedoids():
     min_cost: float = field(init=False) # -> list[float] ??? This way you will be considering several possible combinations of medoids which may be repeated in different combinations
     
     medoids: np.ndarray[int, np.dtype[np.int64]] = field(init=False) # if you implement the above, the type would be: list[list[list[st]]] (consider making this a generator (anyway))
-    max_k: int = 3
+    max_k: int = 6
     members: np.ndarray[int, np.dtype[np.int64]] = field(init=False) # type: ignore
     def __post_init__(self) -> None:
         

@@ -1,13 +1,15 @@
 
-from email import header
+
 from pprint import PrettyPrinter
 import unittest
 from unittest import IsolatedAsyncioTestCase
 import sys
 
 import weaviate
+
 sys.path.append('/Users/cinderella/Documents/Kathleen-back-weaviate/github-upload/spider/src')  # type: ignore
 from spider import Crawler
+from classification import classify_repository
 from utils.constants import GHTOKEN
 from utils.Repo import Repo
 import requests
@@ -29,14 +31,15 @@ class AsyncTests(IsolatedAsyncioTestCase):
         
         crawl_inputs = {
             'q': {
-                'language': 'language:Python,HTML',
-                'stars': 'stars:10..100'
+                'language': 'language:Python,Shell',
+                'stars': 'stars:10..100',
+                'in': 'search+in:description'
             },
             'order': 'desc',
             'props': {
-                "languages": ['Python', 'Rust'],
+                "languages": ['Python', 'Shell'],
                 "name": 'Kathleen',
-                "header": 'Search Engine'
+                "header": 'search'
             }
         }
         crawler = Crawler(crawl_inputs, client) # type: ignore

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import itertools
-from typing import AsyncGenerator, Dict, Optional, Union
+from typing import AsyncGenerator, Dict, Union
 import time
 import weaviate
 from weaviate.util import generate_uuid5
@@ -91,6 +91,8 @@ class Crawler:
             # desired (decided by crawl_inputs), repo stays.
             # If no crawl_inputs are set, every repo close enough to a medoid will be added
             added_repos_ids = []
+           
+            
             for repo in generator:
                 repo_id = generate_uuid5(repo.repo.name)
                 added_repos_ids.append(repo_id)
@@ -101,6 +103,8 @@ class Crawler:
                 
             
             self.w_client.batch.create_objects()
+
+            
             
             init_time = time.time()
             # Try making this concurrent
@@ -137,13 +141,13 @@ class Crawler:
                 real_neighbors.append(append_neighbors)
 
             # Check if fetched neighbors are members of desired medoids
-            # Delete from added_repos_ids those that are more close to the medoid
+            # Delete from added_repos_ids those that are the closest to the medoid
            
             
             member_neighbors = []
             for i in range(len(added_repos_ids)):
                 neigh_ids = [nei['_additional']['id'] for nei in real_neighbors[i]]
-                obj = main_objects['objects']
+                obj = [repo for repo in main_objects['objects'] if repo["class"] == "Repo"]
                 add_to_members = []
                 for j in range(len(obj)):
 
@@ -165,7 +169,10 @@ class Crawler:
         print(self.w_client.data_object.get())
         print('Deleting unwanted fetched repos')
         for repo_id in repos_to_delete:
-            self.w_client.data_object.delete(repo_id)
+            try:
+                self.w_client.data_object.delete(repo_id)
+            except:
+                print(f"Repo with id: {repo_id} not found while deleting it")
             time.sleep(0.5) 
         print(self.w_client.data_object.get())  
         # run classification after having added the desired repos
@@ -176,6 +183,4 @@ class Crawler:
     
     
     
-
-
 
