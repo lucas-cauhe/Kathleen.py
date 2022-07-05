@@ -163,10 +163,10 @@ class Crawler:
                 if medoid in desirded_medoids:
                     added_repos_ids[i] = None
             repos_to_delete.extend([repo_id for repo_id in added_repos_ids if repo_id])
-            break
+            
 
         # delete in batches unwanted repos
-        print(self.w_client.data_object.get())
+        
         print('Deleting unwanted fetched repos')
         for repo_id in repos_to_delete:
             try:
@@ -174,7 +174,7 @@ class Crawler:
             except:
                 print(f"Repo with id: {repo_id} not found while deleting it")
             time.sleep(0.5) 
-        print(self.w_client.data_object.get())  
+         
         # run classification after having added the desired repos
 
         classify_repository(self.w_client)
