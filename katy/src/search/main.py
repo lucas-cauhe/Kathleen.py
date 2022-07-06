@@ -4,7 +4,7 @@ from weaviate import Client
 
 def perform_search(client: Client, selected_properties: str, where_properties: array):
     
-
+    # mirar nearText o nearVector para realizar esto
     where_filter = {
         'operator': 'And',
         'operands': where_properties

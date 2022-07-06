@@ -6,7 +6,7 @@ import itertools
 from typing import AsyncGenerator, Dict, Union
 import time
 import weaviate
-from weaviate.util import generate_uuid5
+import uuid
 from utils.Repo import Repo
 from utils.constants import CRAWL_LIMIT,GH_BASE_SEARCH_URL, GH_QUERY_HEADERS
 
@@ -14,24 +14,17 @@ import requests
 from classification import classify_repository
 from utils.cluster import KMedoids
 import numpy as np
-# LISTA DE URLS 
 
-# Haces una maner de ciclar entre varios repositorios a partir del más trending y cada vez que recorras el ciclo,
-# para cada nodo del grafo te preguntas si el nodo actual es el mismo repositorio que el ciclo que estás construyendo
-# con los repos que encuentras
-# Si coinciden, miras si ha cambiado algo (lo clasificas con weaviate y según los resultados de la clasificación lo actualizas o no, si no
-# miras si se ha cambiado algo en el repositorio)
-# Si no coinciden tienes que actualizar el grafo incluyendo el nuevo repo
+from utils.deduplicates import del_duplicates
 
-# Investigar cual es el mejor tipo de grafo o árbol para esto
-
+"""
+ TODO:  Keep track of already fetched repos, handling duplicates 👍
+        Enhance repos fetching, perhaps tweaking crawl inputs generation
+        Update repo embedings in database (already existing repos in db) ❌(Enhance)
+    
+"""
 
 
-# Para la siguiente versión habrá que considerar una estructura que, dentro del grafo de repos similares a uno, permita establecer para
-# cada repo en ese grafo, cuales son los más similares a él -> lo utilizas en analyze priority
-
-
-   
 
 class Crawler:
 
@@ -39,26 +32,31 @@ class Crawler:
         self.repos_to_crawl: list[Repo] = []
         self.crawl_inputs = crawl_inputs
         self.w_client = client
-
     # mirar también a los topics
     async def repo_gen(self) -> AsyncGenerator[list[Repo], None]:
-        # The repos you now have to fetch is by searching along with crawl_inputs
+        
+        it = 0
         while len(self.repos_to_crawl) < CRAWL_LIMIT:
-            new_repos = await self.fetch_repos()
-            self.repos_to_crawl.extend(new_repos)
-            yield new_repos
+            working_repos = []
+            if self.crawl_inputs['update']:
+                working_repos = 
+            new_repos = await self.fetch_repos(it)
+            new_repos_ = del_duplicates(self.w_client, new_repos)
+            it += 1
+            self.repos_to_crawl.extend(new_repos_)
+            yield new_repos_
 
         
 
-    async def fetch_repos(self) -> list[Repo]:
+    async def fetch_repos(self, page: int) -> list[Repo]:
         match=self.crawl_inputs.get('match', '')
         within, stars, languages = self.crawl_inputs['q'].get('in', ''), self.crawl_inputs['q'].get('stars', ''), self.crawl_inputs['q'].get('language', '') # type: ignore
         query_params = f'{"+"+within if within else ""}{"+"+stars if stars else ""}{"+"+languages if languages else ""}' # type: ignore
         sort: str = self.crawl_inputs.get('sort', None) # type: ignore
         order: str = self.crawl_inputs.get('order', None) #type: ignore
-        attach = f'?q={match}{query_params}{"&sort="+sort if sort else ""}{"&order="+order if order else ""}&per_page=10'
+        attach = f'?q={match}{query_params}{"&sort="+sort if sort else ""}{"&order="+order if order else ""}&per_page=10&page={page}'
 
-        
+        # perhaps you should handle possible duplicates
         res = requests.get(GH_BASE_SEARCH_URL+attach, headers=GH_QUERY_HEADERS).json()
         built_repos = [await Repo(self.w_client, input_repo=repo).build() for repo in res["items"]]
         return built_repos
@@ -94,12 +92,12 @@ class Crawler:
            
             
             for repo in generator:
-                repo_id = generate_uuid5(repo.repo.name)
+                repo_id = uuid.uuid5(uuid.NAMESPACE_URL, repo.repo.name) # This will handle duplicates
                 added_repos_ids.append(repo_id)
                 
                 built_repo = await repo.build()
                 
-                self.w_client.batch.add_data_object(dict(built_repo.repo), 'Repo', uuid=repo_id)
+                self.w_client.batch.add_data_object(dict(built_repo.repo), 'Repo', uuid=repo_id) # Will only add non duplicate object ids
                 
             
             self.w_client.batch.create_objects()

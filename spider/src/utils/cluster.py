@@ -7,6 +7,7 @@ import weaviate
 
 
 
+
 """ OPT. 2 -> THE NEIGHBOR VECTORS FORM A VECTOR SPACE, HENCE BY COMPUTING A BASE FOR IT WILL GIVE SOME REPRESENTATIVE VECTORS """
 """ OPT. 3 -> REVERSE HNSW """
 
@@ -127,6 +128,9 @@ class KMedoids():
             
     def desired_medoids(self, inp: Dict[str, Union[int, str]], client: weaviate.client.Client, n: int = 1) -> list[int]:
         
+        if inp["update"]:
+            return list(range(self.k)) # if it is update time, all medoids are desired
+
         medoids_counts = np.zeros(shape=self.k, dtype=np.float64)
         weights = {"name": lambda x, y: 0.25 if x==y else 0, 
             "languages": lambda c, x: c/(10*x), 
