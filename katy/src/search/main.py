@@ -2,6 +2,11 @@ from array import array
 from certifi import where
 from weaviate import Client
 
+""" 
+Since you will have to add so many repositories, you will have to consider adding just a bunch of representatives for 
+different topics and simply returning the k-nn of the repo which results of hnsw search and a search query of gh api which contains 
+the parameters of the hnsw search result 
+"""
 def perform_search(client: Client, selected_properties: str, where_properties: array):
     
     # mirar nearText o nearVector para realizar esto

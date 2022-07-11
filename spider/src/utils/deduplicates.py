@@ -4,6 +4,7 @@ from utils.Repo import Repo
 import uuid
 from uuid import uuid5
 
+# You need this function since you may end up deleting existing repos in the database when clusters split into new ones or medoids change
 def del_duplicates(w_client: client.Client, repos: list[Repo]) -> list[Repo]:
 
     res = w_client.query.get("Repo", ["_additional {id}"]).do()

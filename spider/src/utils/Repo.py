@@ -3,7 +3,6 @@ from ctypes import Union
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional
-from weaviate import Client
 from dateutil.relativedelta import relativedelta
 import asyncio
 import httpx
@@ -12,14 +11,17 @@ from utils.constants import GH_QUERY_HEADERS
 
 @dataclass
 class RepoInfo:
-    url: str
+    
     name: str
     header: str
     languages: list[str]
     stars: str
     openIssues: str
     isUpdated: bool
+    url: Optional[str] = None
     keywords: list[str] = field(default_factory=list)
+    hasIntention: Optional[list[Dict[str, str]]] = field(default_factory=list)
+    hasPopularity: Optional[list[Dict[str, str]]] = field(default_factory=list)
 
     def __iter__(self):
         yield 'languages', self.languages
@@ -29,17 +31,22 @@ class RepoInfo:
         yield 'openIssues', self.openIssues
         yield 'isUpdated', self.isUpdated
         yield 'keywords', self.keywords
+    
+    
 
 @dataclass
 class Repo():
 
-    w_client: Client
+    
     input_repo: dict[str, Union[str, dict[str, str]]] # type:ignore
     repo: Optional[RepoInfo] = None
 
     
-    async def build(self) -> Repo:
+    async def build(self, for_embedings=False) -> Repo:
         
+        if for_embedings:
+            self.repo = RepoInfo(**self.input_repo)
+            return Repo(repo=self.repo, input_repo=self.input_repo)
 
         now = datetime.now()
         sub_date = now - relativedelta(months=6)
@@ -70,7 +77,7 @@ class Repo():
             'isUpdated': len(last_updated.json()) > 0 # type: ignore
         }
         self.repo = RepoInfo(**info) # type: ignore
-        return Repo(self.w_client, repo=self.repo, input_repo=self.input_repo)
+        return Repo(repo=self.repo, input_repo=self.input_repo)
 
 
 

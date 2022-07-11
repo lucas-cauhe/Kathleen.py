@@ -8,5 +8,6 @@ CRAWL_LIMIT = 50
 GHTOKEN = os.environ['GHTOKEN']
 GH_QUERY_HEADERS={"accept": "application/vnd.github.v3+json",
                 "authorization": f"token {GHTOKEN}"}
+DB_LIMIT = 1000 # repositories threshold in the database
         
 

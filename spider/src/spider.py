@@ -16,12 +16,18 @@ from utils.cluster import KMedoids
 import numpy as np
 
 from utils.deduplicates import del_duplicates
+from utils.topics import Topics
+
+
 
 """
- TODO:  Keep track of already fetched repos, handling duplicates 👍
-        Enhance repos fetching, perhaps tweaking crawl inputs generation
-        Update repo embedings in database (already existing repos in db) ❌(Enhance)
-    
+ TODO: Enhance repos fetching, perhaps tweaking crawl inputs generation -> Pick 5-10 repos from each topic in GH and label each 
+        object intention with the topic name. Once you've got that, you go through each collaborator in repos of some topics adding
+        their most important repos as well and classifying their intention
+        
+        Implement intent recognition for the description field from the user input
+
+
 """
 
 
@@ -32,19 +38,25 @@ class Crawler:
         self.repos_to_crawl: list[Repo] = []
         self.crawl_inputs = crawl_inputs
         self.w_client = client
-    # mirar también a los topics
+    
     async def repo_gen(self) -> AsyncGenerator[list[Repo], None]:
         
         it = 0
         while len(self.repos_to_crawl) < CRAWL_LIMIT:
             working_repos = []
             if self.crawl_inputs['update']:
-                working_repos = 
-            new_repos = await self.fetch_repos(it)
-            new_repos_ = del_duplicates(self.w_client, new_repos)
+                working_repos = [await Repo(input_repo=repo['properties']).build(for_embedings=True) for repo in self.w_client.data_object.get()['objects'] if repo['class'] == 'Repo']
+            elif self.crawl_inputs['topics']:
+            
+                working_repos = Topics().scrape()
+                
+            else:
+
+                new_repos = await self.fetch_repos(it)
+                working_repos = del_duplicates(self.w_client, new_repos)
             it += 1
-            self.repos_to_crawl.extend(new_repos_)
-            yield new_repos_
+            self.repos_to_crawl.extend(working_repos)
+            yield working_repos
 
         
 
@@ -58,7 +70,7 @@ class Crawler:
 
         # perhaps you should handle possible duplicates
         res = requests.get(GH_BASE_SEARCH_URL+attach, headers=GH_QUERY_HEADERS).json()
-        built_repos = [await Repo(self.w_client, input_repo=repo).build() for repo in res["items"]]
+        built_repos = [await Repo(input_repo=repo).build() for repo in res["items"]]
         return built_repos
 
     async def crawl(self) -> None:
@@ -174,11 +186,14 @@ class Crawler:
             time.sleep(0.5) 
          
         # run classification after having added the desired repos
-
-        classify_repository(self.w_client)
+        if not self.crawl_inputs['topics']:
+            classify_repository(self.w_client)
+        else:
+            Topics().update_intention()
           
         self.repos_to_crawl = []
     
     
     
-
+    def fetch_topcis(self, last_indexed: int) -> list[Repo]:
+        pass

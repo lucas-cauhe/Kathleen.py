@@ -9,6 +9,8 @@ from spider import Crawler
 
 import asyncio
 
+from utils.constants import DB_LIMIT
+
 client = weaviate.client.Client('http://192.168.0.23:8080')
 
 
@@ -34,6 +36,9 @@ def has_to_update():
 
 async def main():
     
+    n_repos = sum([1 for repo in client.data_object.get()['objects'] if repo['class'] == 'Repo'])
+    if n_repos > DB_LIMIT:
+        print("Repositories threshold reached, none will be added until space is freed")
     
     crawl_inputs = {
         'q': {
@@ -47,12 +52,14 @@ async def main():
             "name": 'Kathleen',
             "header": 'test'
         },
-        'update': False
+        'update': False,
+        'topics': False
     }
     
 
     crawler = Crawler(crawl_inputs, client)
     crawl_inputs = {**crawl_inputs, 'update': has_to_update()}
+    crawler.
 
     loop = asyncio.get_event_loop()
     try:
