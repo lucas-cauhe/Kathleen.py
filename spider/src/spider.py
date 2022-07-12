@@ -48,8 +48,7 @@ class Crawler:
                 working_repos = [await Repo(input_repo=repo['properties']).build(for_embedings=True) for repo in self.w_client.data_object.get()['objects'] if repo['class'] == 'Repo']
             elif self.crawl_inputs['topics']:
             
-                working_repos = Topics().scrape()
-                
+                working_repos = await Topics().scrape().__anext__()
             else:
 
                 new_repos = await self.fetch_repos(it)
@@ -95,6 +94,7 @@ class Crawler:
         print("Desired medoids: ", desirded_medoids)
         
         repos_to_delete = []
+        repos_added = []
         async for generator in self.repo_gen():
             
             # Add repos to db (retrieving vectorized repo), retrieve nearest neighbors, if nearest neighbors are members of medoid
@@ -105,11 +105,11 @@ class Crawler:
             
             for repo in generator:
                 repo_id = uuid.uuid5(uuid.NAMESPACE_URL, repo.repo.name) # This will handle duplicates
-                added_repos_ids.append(repo_id)
+                added_repos_ids.append(str(repo_id))
                 
                 built_repo = await repo.build()
                 
-                self.w_client.batch.add_data_object(dict(built_repo.repo), 'Repo', uuid=repo_id) # Will only add non duplicate object ids
+                self.w_client.batch.add_data_object(dict(built_repo.repo), 'Repo', uuid=str(repo_id)) # Will only add non duplicate object ids
                 
             
             self.w_client.batch.create_objects()
@@ -172,7 +172,8 @@ class Crawler:
                 
                 if medoid in desirded_medoids:
                     added_repos_ids[i] = None
-            repos_to_delete.extend([repo_id for repo_id in added_repos_ids if repo_id])
+                    repos_added = added_repos_ids[i]
+            repos_to_delete.extend(list(filter(None, added_repos_ids)))
             
 
         # delete in batches unwanted repos
@@ -189,11 +190,11 @@ class Crawler:
         if not self.crawl_inputs['topics']:
             classify_repository(self.w_client)
         else:
-            Topics().update_intention()
+            Topics().update_intention(self.w_client, repos_added)
+
           
         self.repos_to_crawl = []
     
     
     
-    def fetch_topcis(self, last_indexed: int) -> list[Repo]:
-        pass
+    

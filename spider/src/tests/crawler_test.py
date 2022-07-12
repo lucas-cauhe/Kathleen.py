@@ -40,7 +40,9 @@ class AsyncTests(IsolatedAsyncioTestCase):
                 "languages": ['Python', 'Shell'],
                 "name": 'Kathleen',
                 "header": 'search'
-            }
+            },
+            'update': False,
+            'topics': True
         }
         crawler = Crawler(crawl_inputs, client) # type: ignore
 

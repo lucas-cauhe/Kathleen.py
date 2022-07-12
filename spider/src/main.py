@@ -14,6 +14,8 @@ from utils.constants import DB_LIMIT
 client = weaviate.client.Client('http://192.168.0.23:8080')
 
 
+# Design API endpoint to send receive crawl inputs
+
 repo_schema = {
     "languages",
     "header",
@@ -59,7 +61,6 @@ async def main():
 
     crawler = Crawler(crawl_inputs, client)
     crawl_inputs = {**crawl_inputs, 'update': has_to_update()}
-    crawler.
 
     loop = asyncio.get_event_loop()
     try:
