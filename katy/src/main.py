@@ -21,6 +21,7 @@ WEAVIATE_URL = os.getenv('WEAVIATE_URL')
 client = Client(WEAVIATE_URL)
 
 app = FastAPI()
+crawl_inputs = CInputs()
 
 class QueryModel(BaseModel):
     hasIntention: Optional[str] = None
@@ -35,6 +36,15 @@ class QueryModel(BaseModel):
 def query_received(query: QueryModel):
 
     return main(query)
+
+@app.post('/manager')
+def handle_manager(crawler_inputs: Optional[CInputs] = None, **kwargs):
+    if crawl_inputs is not None:
+        # Make request to crawler
+        ...
+    
+    return kwargs
+
 
 def main(query: QueryModel):
    

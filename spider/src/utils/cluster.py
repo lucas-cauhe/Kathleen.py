@@ -128,8 +128,8 @@ class KMedoids():
             
     def desired_medoids(self, inp: Dict[str, Union[int, str]], client: weaviate.client.Client, n: int = 1) -> list[int]:
         
-        if inp["update"]:
-            return list(range(self.k)) # if it is update time, all medoids are desired
+        if inp["update"] or inp["topics"]["general"] or inp["topics"]["collaborators"]:
+            return list(range(self.k)) # if it is update or topics time, all medoids are desired
 
         medoids_counts = np.zeros(shape=self.k, dtype=np.float64)
         weights = {"name": lambda x, y: 0.25 if x==y else 0, 
@@ -162,11 +162,14 @@ class KMedoids():
 
             current_medoid += 1
         wanted_medoids = []
+        
         for _ in range(n):
             curr_max = np.argmax(medoids_counts, axis=0)
             medoids_counts[curr_max] = 0
             wanted_medoids.append(curr_max)
+        
         return wanted_medoids
+        
     
     
              

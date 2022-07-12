@@ -1,48 +1,22 @@
 
-import datetime
 import weaviate
-from weaviate.util import generate_uuid5
 import asyncio
-
-
+import json
 from spider import Crawler
 
-import asyncio
-
 from utils.constants import DB_LIMIT
+
 
 client = weaviate.client.Client('http://192.168.0.23:8080')
 
 
-# Design API endpoint to send receive crawl inputs
-
-repo_schema = {
-    "languages",
-    "header",
-    "name",
-    "keywords",
-    "stars",
-    "openIssues",
-    "lastUpdated"
-}
-
-def has_to_update():
-
-    # Implement better function
-
-    if datetime.datetime.now().hour > 20:
-        return True
-    return False
-
-
-
 async def main():
     
-    n_repos = sum([1 for repo in client.data_object.get()['objects'] if repo['class'] == 'Repo'])
+    n_repos = len(list(filter(lambda r: r['class']=='Repo', client.data_object.get()['objects'])))
     if n_repos > DB_LIMIT:
         print("Repositories threshold reached, none will be added until space is freed")
     
-    crawl_inputs = {
+    """ crawl_inputs = {
         'q': {
             'language': 'language:Docker,Shell',
             'stars': 'stars:10..100',
@@ -55,12 +29,16 @@ async def main():
             "header": 'test'
         },
         'update': False,
-        'topics': False
-    }
-    
+        'topics': {
+            'general': False,
+            'collaborators': False
+        }
+    } """
+    # Get crawl_inputs from shared file between envs
+    with open('../../common/crawl_inputs.json', 'r') as file:
+        crawl_inputs = json.load(file)
 
     crawler = Crawler(crawl_inputs, client)
-    crawl_inputs = {**crawl_inputs, 'update': has_to_update()}
 
     loop = asyncio.get_event_loop()
     try:
@@ -73,4 +51,5 @@ async def main():
     
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    while True:
+        asyncio.run(main())

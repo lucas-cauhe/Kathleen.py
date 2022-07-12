@@ -21,9 +21,8 @@ from utils.topics import Topics
 
 
 """
- TODO: Enhance repos fetching, perhaps tweaking crawl inputs generation -> Pick 5-10 repos from each topic in GH and label each 
-        object intention with the topic name. Once you've got that, you go through each collaborator in repos of some topics adding
-        their most important repos as well and classifying their intention
+ TODO: Enhance repos fetching, perhaps tweaking crawl inputs generation -> Go through each collaborator in repos of some topics adding
+        their most important repos as well and classifying their intention (for next version)
         
         Implement intent recognition for the description field from the user input
 

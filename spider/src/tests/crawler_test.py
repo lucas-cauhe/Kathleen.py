@@ -5,6 +5,7 @@ import unittest
 from unittest import IsolatedAsyncioTestCase
 import sys
 
+
 import weaviate
 
 sys.path.append('/Users/cinderella/Documents/Kathleen-back-weaviate/github-upload/spider/src')  # type: ignore
@@ -12,6 +13,7 @@ from spider import Crawler
 from classification import classify_repository
 from utils.constants import GHTOKEN
 from utils.Repo import Repo
+
 import requests
 import logging
 import tracemalloc
