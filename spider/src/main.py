@@ -16,24 +16,6 @@ async def main():
     if n_repos > DB_LIMIT:
         print("Repositories threshold reached, none will be added until space is freed")
     
-    """ crawl_inputs = {
-        'q': {
-            'language': 'language:Docker,Shell',
-            'stars': 'stars:10..100',
-            'in': 'test+in:description'
-        },
-        'order': 'desc',
-        'props': {
-            "languages": ['Docker', 'Shell'],
-            "name": 'Kathleen',
-            "header": 'test'
-        },
-        'update': False,
-        'topics': {
-            'general': False,
-            'collaborators': False
-        }
-    } """
     # Get crawl_inputs from shared file between envs
     with open('../../common/crawl_inputs.json', 'r') as file:
         crawl_inputs = json.load(file)

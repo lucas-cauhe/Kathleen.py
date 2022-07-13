@@ -2,7 +2,6 @@
 
 from pprint import PrettyPrinter
 import unittest
-from unittest import IsolatedAsyncioTestCase
 import sys
 
 
@@ -13,15 +12,18 @@ from spider import Crawler
 from classification import classify_repository
 from utils.constants import GHTOKEN
 from utils.Repo import Repo
+from utils.topics import Topics
 
 import requests
 import logging
 import tracemalloc
 
+from shared.crawler_inputs import CInputs
+
 tracemalloc.start()
 client = weaviate.client.Client("http://192.168.0.23:8080")
 
-class AsyncTests(IsolatedAsyncioTestCase):
+class AsyncCrawlerTest(unittest.IsolatedAsyncioTestCase):
     
     
     
@@ -44,7 +46,10 @@ class AsyncTests(IsolatedAsyncioTestCase):
                 "header": 'search'
             },
             'update': False,
-            'topics': True
+            'topics': {
+                'general': True,
+                'collaborators': False
+            }
         }
         crawler = Crawler(crawl_inputs, client) # type: ignore
 
@@ -53,8 +58,8 @@ class AsyncTests(IsolatedAsyncioTestCase):
         repo1 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen.py', headers={"Authorization": f"token {GHTOKEN}"}).json()
         repo2 = requests.get('https://api.github.com/repos/lucas-cauhe/Kathleen', headers={"Authorization": f"token {GHTOKEN}"}).json()
         
-        repo1_init = await Repo(client, input_repo=repo1).build()
-        repo2_init = await Repo(client, input_repo=repo2).build()
+        repo1_init = await Repo(input_repo=repo1).build()
+        repo2_init = await Repo(input_repo=repo2).build()
 
         self.assertEqual('Kathleen.py', repo1_init.repo.name)
         self.assertEqual('Kathleen', repo2_init.repo.name)
@@ -99,6 +104,21 @@ class AsyncTests(IsolatedAsyncioTestCase):
         """ CRAWL """
 
         await crawler.crawl()
+        """ t = Topics()
+
+        print(t._topics)
+
+        async for links in t.scrape():
+            print(f"Last indexed topic: {t._last_indexed_topic}")
+            print(f"List for topic {t._topics[t._last_indexed_topic]}: {links}")  
+              
+        t2 = Topics()
+        print(f"{t is t2=}")
+        print(f"Current page: {t._current_page}") """
+        
+
+
+        
 
 
 if __name__ == '__main__':

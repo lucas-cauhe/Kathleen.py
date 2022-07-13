@@ -37,17 +37,26 @@ class Crawler:
         self.repos_to_crawl: list[Repo] = []
         self.crawl_inputs = crawl_inputs
         self.w_client = client
+        self.topics = Topics()
+        
+        while self.topics._topics == []:
+            print("topics not yet initialized")
+            time.sleep(2)
+            self.topics.__init__()
     
     async def repo_gen(self) -> AsyncGenerator[list[Repo], None]:
         
         it = 0
+        
         while len(self.repos_to_crawl) < CRAWL_LIMIT:
             working_repos = []
             if self.crawl_inputs['update']:
                 working_repos = [await Repo(input_repo=repo['properties']).build(for_embedings=True) for repo in self.w_client.data_object.get()['objects'] if repo['class'] == 'Repo']
-            elif self.crawl_inputs['topics']:
-            
-                working_repos = await Topics().scrape().__anext__()
+            elif self.crawl_inputs['topics']['general']:
+                try:
+                    working_repos = await self.topics.scrape().__anext__()
+                except: 
+                    print('Error on topics')
             else:
 
                 new_repos = await self.fetch_repos(it)
@@ -110,8 +119,10 @@ class Crawler:
                 
                 self.w_client.batch.add_data_object(dict(built_repo.repo), 'Repo', uuid=str(repo_id)) # Will only add non duplicate object ids
                 
-            
-            self.w_client.batch.create_objects()
+            try:
+                self.w_client.batch.create_objects()
+            except:
+                print('Batches may not have been added')
 
             
             
@@ -170,10 +181,11 @@ class Crawler:
                 medoid = np.bincount(medoid_members[i]).argmax()
                 
                 if medoid in desirded_medoids:
+                    repos_added.append(added_repos_ids[i])
                     added_repos_ids[i] = None
-                    repos_added = added_repos_ids[i]
+                    
             repos_to_delete.extend(list(filter(None, added_repos_ids)))
-            
+            break
 
         # delete in batches unwanted repos
         
@@ -186,10 +198,12 @@ class Crawler:
             time.sleep(0.5) 
          
         # run classification after having added the desired repos
-        if not self.crawl_inputs['topics']:
+        print(self.topics._topics)
+        if not self.crawl_inputs['topics']['general']:
             classify_repository(self.w_client)
         else:
-            Topics().update_intention(self.w_client, repos_added)
+            
+            self.topics.update_intention(self.w_client, repos_added)
 
           
         self.repos_to_crawl = []

@@ -1,15 +1,17 @@
-
+from __future__ import annotations
 import asyncio
 import re
+from time import sleep
 from typing import AsyncGenerator, Tuple
 import uuid
 from bs4 import BeautifulSoup
 import requests
-from __future__ import annotations
+
 from utils.Repo import Repo
 import httpx
 import itertools
 from weaviate.client import Client
+from utils.constants import GH_QUERY_HEADERS
 
 
 BASE_GH_REPOS = 'https://api.github.com/repos/'
@@ -37,7 +39,7 @@ class Topics:
         if self._current_page > 6:
             print('All topics have been crawled')
             raise SyntaxError # Substitute by custom exception
-        
+        print(self._last_indexed_topic)
         if self._last_indexed_topic == 0:
             html_res = requests.get(self._BASE_URL+f'?page={self._current_page}').text
             self._topics = self.get_curr_page_topics(html_res)
@@ -47,7 +49,11 @@ class Topics:
     async def scrape(self) -> AsyncGenerator[list[Repo], None]:
 
         for topic in self._topics[self._last_indexed_topic:]:
+            
             topic_repos = self.crawl_topic(topic)
+            while len(topic_repos) == 0:
+                sleep(2) # Github robots.txt specifies a crawl-delay: 1
+                topic_repos = self.crawl_topic(topic)
 
             fetched_repos = await asyncio.gather(
                 *map(lambda repo, client: (await client.get(BASE_GH_REPOS+repo[1]+'/'+repo[0], headers=GH_QUERY_HEADERS) for _ in '_').__anext__(),  # type: ignore
@@ -55,7 +61,7 @@ class Topics:
                     itertools.repeat(self._client),)
             )
             yield [await Repo(repo.json()).build() for repo in fetched_repos]
-               
+            
             self._last_indexed_topic = (self._last_indexed_topic+1)%len(self._topics) # Because there are multiple pages
 
             if self._last_indexed_topic == 0:
@@ -78,7 +84,7 @@ class Topics:
 
         all_links = soup.find_all('a', 'text-bold wb-break-word')
         repos_list = list(map(self.parse_tuple, all_links[:5]))
-
+        print(f"Repos selected to index: {repos_list}")
         return repos_list
 
     def parse_tuple(self, link) -> Tuple[str, str]:
@@ -89,8 +95,8 @@ class Topics:
     def update_intention(self, client: Client, repos_ids: list[str]) -> None:
         current_topic = self._topics[self._last_indexed_topic][1:]
         tp_id = uuid.uuid5(uuid.NAMESPACE_URL, current_topic)
-        client.batch.add_data_object({'type': current_topic}, 'Intention', uuid=str(tp_id))
-
+        client.data_object.create({'type': current_topic}, 'Intention', uuid=str(tp_id))
+        
         for repo_id in repos_ids:
             client.batch.add_reference(repo_id, "Repo", "hasIntention", str(tp_id))
         

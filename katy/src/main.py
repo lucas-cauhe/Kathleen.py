@@ -1,6 +1,7 @@
 
 from weaviate import Client
 import json
+from typing import Dict, Union
 import time
 import uuid
 import requests
@@ -30,6 +31,12 @@ class QueryModel(BaseModel):
     openIssues: Optional[int] = None
     isUpdated: Optional[bool] = None
 
+class CInputs(BaseModel):
+    q: Dict[str, str]
+    order: Optional[str]
+    props: Dict[str, Union[list[str], str]]
+    update: bool
+    topics: Dict[str, bool]
 # For v2, I will make available search by url (find most similar repositories to the one given in the url)
 
 @app.post('/query')
@@ -40,8 +47,10 @@ def query_received(query: QueryModel):
 @app.post('/manager')
 def handle_manager(crawler_inputs: Optional[CInputs] = None, **kwargs):
     if crawl_inputs is not None:
-        # Make request to crawler
-        ...
+        # Dump inputs to common/crawler_inputs.json
+
+        with open("../../common/crawler_inputs.json", "w") as file:
+            json.dump(dict(crawl_inputs), file)
     
     return kwargs
 
