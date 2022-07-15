@@ -1,0 +1,18 @@
+{
+    "q": {
+        "language": "language:Docker,Shell",
+        "stars": "stars:10..100",
+        "in": "test+in:description"
+    },
+    "order": "desc",
+    "props": {
+        "languages": ["Docker", "Shell"],
+        "name": "Kathleen",
+        "header": "test"
+    },
+    "update": "False",
+    "topics": {
+        "general": "True",
+        "collaborators": "False"
+    }
+}

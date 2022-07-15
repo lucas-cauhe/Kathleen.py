@@ -27,7 +27,7 @@ class Topics:
 
     
 
-    def __new__(cls: type[Topics], *props) -> Topics:
+    def __new__(cls: type[Topics]) -> Topics:
         
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -41,7 +41,7 @@ class Topics:
             raise SyntaxError # Substitute by custom exception
         print(self._last_indexed_topic)
         if self._last_indexed_topic == 0:
-            html_res = requests.get(self._BASE_URL+f'?page={self._current_page}').text
+            html_res = requests.get(self._BASE_URL+f'?page={self._current_page}').text 
             self._topics = self.get_curr_page_topics(html_res)
     
 
@@ -52,7 +52,7 @@ class Topics:
             
             topic_repos = self.crawl_topic(topic)
             while len(topic_repos) == 0:
-                sleep(2) # Github robots.txt specifies a crawl-delay: 1
+                sleep(5) # Github robots.txt specifies a crawl-delay: 1
                 topic_repos = self.crawl_topic(topic)
 
             fetched_repos = await asyncio.gather(
@@ -60,12 +60,15 @@ class Topics:
                     topic_repos, 
                     itertools.repeat(self._client),)
             )
-            yield [await Repo(repo.json()).build() for repo in fetched_repos]
-            
+            print(self._last_indexed_topic)
             self._last_indexed_topic = (self._last_indexed_topic+1)%len(self._topics) # Because there are multiple pages
 
             if self._last_indexed_topic == 0:
                 self._current_page += 1
+
+            yield [await Repo(repo.json()).build() for repo in fetched_repos]
+            
+            
         
     # Perhaps listing sub paths of the base url would be much faster than scraping the entire page
     # If you know how I'd like to hear it!
@@ -74,7 +77,7 @@ class Topics:
 
         all_links = soup.find_all('a', href=re.compile('topics'))
         filtered_list = set([param[7:] for link in all_links if '/topics/' in (param := link.get('href'))]) # Delete duplicates and unwanted links
-
+        
         return list(filtered_list)
 
     def crawl_topic(self, topic: str) -> list[Tuple[str, str]]: # [(<<repo name>>, <<repo owner>>)]
@@ -85,6 +88,7 @@ class Topics:
         all_links = soup.find_all('a', 'text-bold wb-break-word')
         repos_list = list(map(self.parse_tuple, all_links[:5]))
         print(f"Repos selected to index: {repos_list}")
+        
         return repos_list
 
     def parse_tuple(self, link) -> Tuple[str, str]:
@@ -95,6 +99,8 @@ class Topics:
     def update_intention(self, client: Client, repos_ids: list[str]) -> None:
         current_topic = self._topics[self._last_indexed_topic][1:]
         tp_id = uuid.uuid5(uuid.NAMESPACE_URL, current_topic)
+        if client.data_object.exists(tp_id):
+            return 
         client.data_object.create({'type': current_topic}, 'Intention', uuid=str(tp_id))
         
         for repo_id in repos_ids:

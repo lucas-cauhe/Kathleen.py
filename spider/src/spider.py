@@ -1,8 +1,10 @@
 
 # DESIGN FOR CRAWLING THROUGH GITHUB REPOS
 from __future__ import annotations
+import enum
 
 import itertools
+from select import kevent
 from typing import AsyncGenerator, Dict, Union
 import time
 import weaviate
@@ -33,15 +35,15 @@ from utils.topics import Topics
 
 class Crawler:
 
-    def __init__(self, crawl_inputs: Dict[str, Union[int, str]], client: weaviate.client.Client) -> None:
+    def __init__(self, crawl_inputs: Dict[str, Union[int, str]], client: weaviate.client.Client, t: Topics) -> None:
         self.repos_to_crawl: list[Repo] = []
         self.crawl_inputs = crawl_inputs
         self.w_client = client
-        self.topics = Topics()
+        self.topics = t
         
         while self.topics._topics == []:
             print("topics not yet initialized")
-            time.sleep(2)
+            time.sleep(5)
             self.topics.__init__()
     
     async def repo_gen(self) -> AsyncGenerator[list[Repo], None]:
@@ -50,20 +52,21 @@ class Crawler:
         
         while len(self.repos_to_crawl) < CRAWL_LIMIT:
             working_repos = []
-            if self.crawl_inputs['update']:
+            if self.crawl_inputs['update'] == 'True':
                 working_repos = [await Repo(input_repo=repo['properties']).build(for_embedings=True) for repo in self.w_client.data_object.get()['objects'] if repo['class'] == 'Repo']
-            elif self.crawl_inputs['topics']['general']:
+            elif self.crawl_inputs['topics']['general'] == 'True':
                 try:
                     working_repos = await self.topics.scrape().__anext__()
                 except: 
                     print('Error on topics')
             else:
 
-                new_repos = await self.fetch_repos(it)
-                working_repos = del_duplicates(self.w_client, new_repos)
+                working_repos = await self.fetch_repos(it)
+                
             it += 1
-            self.repos_to_crawl.extend(working_repos)
-            yield working_repos
+            working_repos_ = del_duplicates(self.w_client, working_repos)
+            self.repos_to_crawl.extend(working_repos_)
+            yield working_repos_
 
         
 
@@ -82,24 +85,30 @@ class Crawler:
 
     async def crawl(self) -> None:
         """ TAKES THE REPOS FROM <<repos_to_crawl>> AND ADDS THEM TO THE DB AND CLASSIFIES THEM """  
-       
-        # start kmedoids
-        main_objects = self.w_client.data_object.get(with_vector=True)
-        vectors = np.array([repo['vector'] for repo in main_objects['objects'] if repo["class"] == "Repo"])
-        
-        
-        # Compute clusters
-        # Clusters will be computed using K-Medoids
-        cluster = KMedoids(vectors)
-        
-        cluster.cluster()
 
-        print("Number of clusters: ", cluster.k)
-        print("Members of each cluster: ", cluster.members)
-        print("Data length: ", len(cluster.data))
+        cluster = None
+        desirded_medoids = None
 
-        desirded_medoids = cluster.desired_medoids(self.crawl_inputs, self.w_client)
-        print("Desired medoids: ", desirded_medoids)
+        if self.cinputs_by_search():
+            # start kmedoids
+            # you have to change this since at most it will retrieve QUERY_DEFAULTS_LIMIT objects
+            # Making a query should return them all
+            main_objects = self.w_client.data_object.get(with_vector=True)
+            vectors = np.array([repo['vector'] for repo in main_objects['objects'] if repo["class"] == "Repo"])
+            
+            
+            # Compute clusters
+            # Clusters will be computed using K-Medoids
+            cluster = KMedoids(vectors)
+            
+            cluster.cluster()
+
+            print("Number of clusters: ", cluster.k)
+            print("Members of each cluster: ", cluster.members)
+            print("Data length: ", len(cluster.data))
+
+            desirded_medoids = cluster.desired_medoids(self.crawl_inputs, self.w_client)
+            print("Desired medoids: ", desirded_medoids)
         
         repos_to_delete = []
         repos_added = []
@@ -115,77 +124,77 @@ class Crawler:
                 repo_id = uuid.uuid5(uuid.NAMESPACE_URL, repo.repo.name) # This will handle duplicates
                 added_repos_ids.append(str(repo_id))
                 
-                built_repo = await repo.build()
-                
-                self.w_client.batch.add_data_object(dict(built_repo.repo), 'Repo', uuid=str(repo_id)) # Will only add non duplicate object ids
+                self.w_client.batch.add_data_object(dict(repo.repo), 'Repo', uuid=str(repo_id)) # Will only add non duplicate object ids
                 
             try:
-                self.w_client.batch.create_objects()
+                print("Shape before: ", self.w_client.batch.shape)
+                response = self.w_client.batch.create_objects()
+                print("Shape after: ", self.w_client.batch.shape)
             except:
                 print('Batches may not have been added')
 
             
-            
-            init_time = time.time()
-            # Try making this concurrent
-            vector_repos = list(map(lambda id, client:  client.data_object.get_by_id(id, with_vector=True).get("vector", None), 
-                added_repos_ids,
-                itertools.repeat(self.w_client)))
-            end_time = time.time()
+            if self.cinputs_by_search():
+                init_time = time.time()
+                # Try making this concurrent
+                vector_repos = list(map(lambda id, client:  client.data_object.get_by_id(id, with_vector=True).get("vector", None), 
+                    added_repos_ids,
+                    itertools.repeat(self.w_client)))
+                end_time = time.time()
 
-            print(f"Vectors fetched in {end_time-init_time} seconds")
+                print(f"Vectors fetched in {end_time-init_time} seconds")
 
 
-            # Retrieve nearest neighbors  
-            
-            neighbors = [] 
-            for vector in vector_repos:    
-                near_vector = {
-                    'vector': vector,
-                    'limit': 10
-                }
+                # Retrieve nearest neighbors  
                 
-                
-                near_neighbors = self.w_client.query.get("Repo", ["name"]) \
-                    .with_near_vector(near_vector) \
-                    .with_additional(['certainty', 'id']) \
-                    .do()
-                neighbors.append(near_neighbors)
-
-            real_neighbors = []
-            for neighborhood in neighbors:
-                append_neighbors = []
-                for neighbor in neighborhood['data']['Get']['Repo']:
-                    if neighbor['_additional']['id'] not in added_repos_ids:
-                        append_neighbors.append(neighbor)
-                real_neighbors.append(append_neighbors)
-
-            # Check if fetched neighbors are members of desired medoids
-            # Delete from added_repos_ids those that are the closest to the medoid
-           
-            
-            member_neighbors = []
-            for i in range(len(added_repos_ids)):
-                neigh_ids = [nei['_additional']['id'] for nei in real_neighbors[i]]
-                obj = [repo for repo in main_objects['objects'] if repo["class"] == "Repo"]
-                add_to_members = []
-                for j in range(len(obj)):
-
-                    if obj[j]['id'] in neigh_ids:
-                        add_to_members.append(j)
-                member_neighbors.append(add_to_members)
-            
-            medoid_members = cluster.members[member_neighbors]
-
-            for i in range(len(medoid_members)):
-                medoid = np.bincount(medoid_members[i]).argmax()
-                
-                if medoid in desirded_medoids:
-                    repos_added.append(added_repos_ids[i])
-                    added_repos_ids[i] = None
+                neighbors = [] 
+                for vector in vector_repos:    
+                    near_vector = {
+                        'vector': vector,
+                        'limit': 10
+                    }
                     
-            repos_to_delete.extend(list(filter(None, added_repos_ids)))
-            break
+                    
+                    near_neighbors = self.w_client.query.get("Repo", ["name"]) \
+                        .with_near_vector(near_vector) \
+                        .with_additional(['certainty', 'id']) \
+                        .do()
+                    neighbors.append(near_neighbors)
+
+                real_neighbors = []
+                for neighborhood in neighbors:
+                    append_neighbors = []
+                    for neighbor in neighborhood['data']['Get']['Repo']:
+                        if neighbor['_additional']['id'] not in added_repos_ids:
+                            append_neighbors.append(neighbor)
+                    real_neighbors.append(append_neighbors)
+
+                # Check if fetched neighbors are members of desired medoids
+                # Delete from added_repos_ids those that are the closest to the medoid
+            
+                
+                member_neighbors = []
+                for k, _ in enumerate(added_repos_ids):
+                    neigh_ids = [nei['_additional']['id'] for nei in real_neighbors[k]]
+                    obj = [repo for repo in main_objects['objects'] if repo["class"] == "Repo"]
+                    add_to_members = []
+                    for k_, val in enumerate(obj):
+
+                        if val['id'] in neigh_ids:
+                            add_to_members.append(k_)
+                    member_neighbors.append(add_to_members)
+                
+                medoid_members = cluster.members[member_neighbors]
+
+                for k, val in enumerate(medoid_members):
+                    medoid = np.bincount(val).argmax()
+                    
+                    if medoid in desirded_medoids:
+                        repos_added.append(added_repos_ids[k])
+                        added_repos_ids[k] = None
+                        
+                repos_to_delete.extend(list(filter(None, added_repos_ids)))
+            
 
         # delete in batches unwanted repos
         
@@ -199,7 +208,7 @@ class Crawler:
          
         # run classification after having added the desired repos
         print(self.topics._topics)
-        if not self.crawl_inputs['topics']['general']:
+        if not self.crawl_inputs['topics']['general'] == 'True':
             classify_repository(self.w_client)
         else:
             
@@ -209,5 +218,7 @@ class Crawler:
         self.repos_to_crawl = []
     
     
-    
+    def cinputs_by_search(self) -> bool:
+        return not self.crawl_inputs['update'] == 'True' and not self.crawl_inputs['topics']['general'] == 'True'
+
     

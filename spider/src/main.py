@@ -1,37 +1,46 @@
 
+from time import sleep
 import weaviate
 import asyncio
 import json
 from spider import Crawler
 
-from utils.constants import DB_LIMIT
+from utils.constants import CINPUTS_PATH, DB_LIMIT
+from utils.topics import Topics
 
 
-client = weaviate.client.Client('http://192.168.0.23:8080')
+def weaviate_setup(client: weaviate.client.Client):
+
+    # Batch config
+    client.batch.configure(
+        batch_size=10,
+        timeout_retries=3,
+        callback=None
+    )
 
 
-async def main():
+async def main(crawler: Crawler, client: weaviate.client.Client):
     
     n_repos = len(list(filter(lambda r: r['class']=='Repo', client.data_object.get()['objects'])))
     if n_repos > DB_LIMIT:
         print("Repositories threshold reached, none will be added until space is freed")
     
     # Get crawl_inputs from shared file between envs
-    with open('../../common/crawl_inputs.json', 'r') as file:
+    with open(CINPUTS_PATH, 'r') as file:
         crawl_inputs = json.load(file)
 
-    crawler = Crawler(crawl_inputs, client)
-
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(crawler.crawl()) # Ref: https://peps.python.org/pep-0525/
-        #...
-    finally:
-        loop.close()
+    
+    crawler.crawl_inputs = crawl_inputs
+    await crawler.crawl()
 
 
     
 
 if __name__ == '__main__':
+    client = weaviate.client.Client(url='http://192.168.0.23:8080', timeout_config=(5, 20))
+    weaviate_setup(client)
+    t = Topics()
+    crawler = Crawler({}, client=client, t=t)
     while True:
-        asyncio.run(main())
+        sleep(2)
+        asyncio.run(main(crawler, client))
