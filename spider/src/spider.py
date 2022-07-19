@@ -78,7 +78,7 @@ class Crawler:
         order: str = self.crawl_inputs.get('order', None) #type: ignore
         attach = f'?q={match}{query_params}{"&sort="+sort if sort else ""}{"&order="+order if order else ""}&per_page=10&page={page}'
 
-        # perhaps you should handle possible duplicates
+        
         res = requests.get(GH_BASE_SEARCH_URL+attach, headers=GH_QUERY_HEADERS).json()
         built_repos = [await Repo(input_repo=repo).build() for repo in res["items"]]
         return built_repos
