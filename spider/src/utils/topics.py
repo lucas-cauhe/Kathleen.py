@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import re
 from time import sleep
-from typing import AsyncGenerator, Tuple
+from typing import AsyncGenerator, Optional, Tuple
 import uuid
 from bs4 import BeautifulSoup
 import requests
@@ -24,6 +24,7 @@ class Topics:
     _topics = []
     _current_page = 1
     _client = httpx.AsyncClient()
+    _scrape_state: Optional[AsyncGenerator] = None
 
     
 
@@ -61,12 +62,16 @@ class Topics:
                     itertools.repeat(self._client),)
             )
             print(self._last_indexed_topic)
+            
+            yield [await Repo(repo.json()).build() for repo in fetched_repos]
             self._last_indexed_topic = (self._last_indexed_topic+1)%len(self._topics) # Because there are multiple pages
 
             if self._last_indexed_topic == 0:
                 self._current_page += 1
+            
+            
 
-            yield [await Repo(repo.json()).build() for repo in fetched_repos]
+            
             
             
         
@@ -100,6 +105,7 @@ class Topics:
         current_topic = self._topics[self._last_indexed_topic][1:]
         tp_id = uuid.uuid5(uuid.NAMESPACE_URL, current_topic)
         if client.data_object.exists(tp_id):
+            print(f'Topic with id {tp_id} already exists')
             return 
         client.data_object.create({'type': current_topic}, 'Intention', uuid=str(tp_id))
         

@@ -2,11 +2,11 @@
 from typing import Dict, Union
 from weaviate import Client
 import requests
-from src.main import GHTOKEN
+import sys
+sys.path.append('/Users/cinderella/Documents/Kathleen-back-weaviate/github-upload/katy/src')
+from utils.format import customDict
 
-GH_QUERY_HEADERS={"accept": "application/vnd.github.v3+json",
-                "authorization": f"token {GHTOKEN}"}
-GH_BASE_SEARCH_URL='https://api.github.com/search/repositories'
+
 
 """ 
 Since you will have to add so many repositories, you will have to consider adding just a bunch of representatives for 
@@ -21,35 +21,32 @@ def perform_boolean_search(client: Client, selected_properties: str, where_prope
         'operands': where_properties
     } if len(where_properties) > 1 else where_properties[0]
 
-
+    
 
     results = client.query.get('Repo', selected_properties)\
-                        .with_limit(10)\
-                        .with_where(where_filter)\
-                        .do()
-    
+        .with_limit(10)\
+        .with_where(where_filter)\
+        .do()
+    print(f"{results=}")
     return results['data']['Get']['Repo']
 
 def perform_fuzzy_search(client: Client, query_filters: Dict[str, Union[str, int]]):
     
-    near_text = {
-        'concepts': [query_filters['intention']],
+    near_text = customDict({
+        'concepts': query_filters['intention'].split(' '),
         'certainty': 0.8,
         'moveTo': {
-            'concepts': [query_filters['most_valuable']],
+            'concepts': query_filters['most_valuable'],
             'force': 0.05
         }
-    }
-    
-    res = client.query.get('Repo', ['name'])\
-        .with_additional(['certainty'])\
+    })
+    res = client.query.get('Repo', ['name', "_additional { distance, id } "])\
         .with_near_text(near_text)\
-        .with_limit(query_filters['limit'])\
         .do()
-
+    print(f"other response: {res}")
     return res['data']['Get']['Repo']
 
-def fetch_similar_repos(**kwargs):
+def fetch_similar_repos(gh_base, gh_headers, **kwargs):
 
     match=kwargs['intention']
     stars, languages = kwargs['stars'], kwargs['languages'] # type: ignore
@@ -57,6 +54,6 @@ def fetch_similar_repos(**kwargs):
     attach = f'?q={match}{query_params}&per_page=10'
 
     
-    res = requests.get(GH_BASE_SEARCH_URL+attach, headers=GH_QUERY_HEADERS).json()
+    res = requests.get(gh_base+attach, headers=gh_headers).json()
 
     return res['items']

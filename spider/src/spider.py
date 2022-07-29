@@ -56,7 +56,10 @@ class Crawler:
                 working_repos = [await Repo(input_repo=repo['properties']).build(for_embedings=True) for repo in self.w_client.data_object.get()['objects'] if repo['class'] == 'Repo']
             elif self.crawl_inputs['topics']['general'] == 'True':
                 try:
-                    working_repos = await self.topics.scrape().__anext__()
+                    if self.topics._scrape_state == None:
+                        self.topics._scrape_state = self.topics.scrape()
+                    working_repos = await self.topics._scrape_state.__anext__()
+                        
                 except: 
                     print('Error on topics')
             else:
@@ -125,7 +128,7 @@ class Crawler:
                 added_repos_ids.append(str(repo_id))
                 
                 self.w_client.batch.add_data_object(dict(repo.repo), 'Repo', uuid=str(repo_id)) # Will only add non duplicate object ids
-                
+            
             try:
                 print("Shape before: ", self.w_client.batch.shape)
                 response = self.w_client.batch.create_objects()
@@ -133,6 +136,8 @@ class Crawler:
             except:
                 print('Batches may not have been added')
 
+            if self.crawl_inputs['topics']['general'] == 'True':
+                self.topics.update_intention(self.w_client, added_repos_ids)
             
             if self.cinputs_by_search():
                 init_time = time.time()
@@ -207,12 +212,12 @@ class Crawler:
             time.sleep(0.5) 
          
         # run classification after having added the desired repos
-        print(self.topics._topics)
-        if not self.crawl_inputs['topics']['general'] == 'True':
+        print("Topics: ", self.topics._topics)
+        if self.crawl_inputs['topics']['general'] != 'True':
             classify_repository(self.w_client)
-        else:
+        
             
-            self.topics.update_intention(self.w_client, repos_added)
+            
 
           
         self.repos_to_crawl = []

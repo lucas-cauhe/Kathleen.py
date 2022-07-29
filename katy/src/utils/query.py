@@ -1,27 +1,10 @@
 from array import array
-from typing import Tuple
+from typing import Tuple, Union
 from weaviate import Client
 
+def build_where_for(prop: str, value: Union[str,int,bool, list[str]]) -> dict:
 
-def languages_where_filter(langs) -> dict:
-    if len(langs) > 1:
-        return {
-            'operator': 'And',
-            'operands': list(map(lambda lang: {
-                'path': ['languages', 'Language', 'name'],
-                'operator': 'Equal',
-                'valueString': lang
-            }, langs))
-        }
-    return {
-        'operator': 'Equal',
-        'valueString': langs[0],
-        'path': ['languages', 'Language', 'name']
-    }
-
-def build_where_for(prop: str, value: str or int or bool) -> dict:
-
-    if prop == 'intention':
+    if prop == 'hasIntention':
         return {
             'operator': 'Equal',
             'valueString': value,
@@ -29,30 +12,24 @@ def build_where_for(prop: str, value: str or int or bool) -> dict:
         }   
     if prop == 'languages':
         
-        return languages_where_filter(value)
+        return {
+            'operator': 'Equal',
+            'valueString': value,
+            'path': ['languages']
+        }
 
     if prop == 'stars':
         return {
             'operator': 'Equal',
-            'valueInt': value,
+            'valueText': value,
             'path': ['stars']
         }
 
     if prop == 'openIssues':
         return {
-            'operator': 'And',
-            'operands': [
-                {
-                    'path': ['openIssues'],
-                    'operator': 'GreaterThanEqual',
-                    'valueInt': value-10
-                },
-                {
-                    'path': ['openIssues'],
-                    'operator': 'LessThanEqual',
-                    'valueInt': value+10
-                }
-            ]
+            'operator': 'Equal',
+            'valueText': value,
+            'path': ['openIssues']
         }
     if prop == 'isUpdated':
         return {
@@ -63,20 +40,21 @@ def build_where_for(prop: str, value: str or int or bool) -> dict:
 
 
 properties_query_dict = {
-    'languages': 'languages { ... on Language { name } }',
+    'languages': 'languages',
     'hasIntention': 'hasIntention { ... on Intention { type } }',
     'stars': 'stars',
     'openIssues': 'openIssues',
     'isUpdated': 'isUpdated'
 }
 
-def queryBuild(client: Client, iq: dict) -> Tuple[str, array]:
+def queryBuild(client: Client, iq: dict) -> Tuple[str, list[str]]:
 
     selected_properties = ['name']
     where_properties = []
     for property in iq.items():
+        print(f"{property=}")
         if property[1] != None:
             selected_properties.append(properties_query_dict[property[0]])
             where_properties.append(build_where_for(property[0], property[1]))
     
-    return ' '.join(selected_properties), where_properties
+    return ', '.join(selected_properties), where_properties

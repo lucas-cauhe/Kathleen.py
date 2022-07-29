@@ -1,3 +1,4 @@
+.gitignore
 docker-compose.yml
 metrics/
-
+**/__pycache__

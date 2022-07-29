@@ -12,7 +12,7 @@ import weaviate
 """ OPT. 3 -> REVERSE HNSW """
 
 @dataclass 
-class KMedoids():
+class KMedoids:
     # FasterPAM k-medoids clustering
 
     data: np.ndarray[int, np.dtype[np.float64]]
