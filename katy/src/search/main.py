@@ -40,7 +40,7 @@ def perform_fuzzy_search(client: Client, query_filters: Dict[str, Union[str, int
             'force': 0.05
         }
     })
-    res = client.query.get('Repo', ['name', "_additional { distance, id } "])\
+    res = client.query.get('Repo', ['name', 'stars', 'languages', "_additional { distance, id } "])\
         .with_near_text(near_text)\
         .do()
     print(f"other response: {res}")
@@ -50,7 +50,7 @@ def fetch_similar_repos(gh_base, gh_headers, **kwargs):
 
     match=kwargs['intention']
     stars, languages = kwargs['stars'], kwargs['languages'] # type: ignore
-    query_params = f'+in:description{"+"+stars if stars else ""}{"+"+languages if languages else ""}' # type: ignore
+    query_params = f'+in:description{"+"+stars if stars else ""}{"+"+",".join(languages) if languages else ""}' # type: ignore
     attach = f'?q={match}{query_params}&per_page=10'
 
     
